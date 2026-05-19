@@ -1,0 +1,14 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# .checkov.yaml  –  Global Checkov suppressions
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Only graph checks (CKV2_*) belong here — they evaluate resource relationships
+# rather than resource attributes and do not respect inline checkov:skip comments.
+# Regular attribute checks (CKV_*) are suppressed inline on the resource block.
+#
+# Each entry must have a justification comment. Suppressions without a reason
+# will be rejected in code review.
+# ──────────────────────────────────────────────────────────────────────────────
+
+skip-checks:
+  - CKV2_AZURE_5   # Key Vault private endpoint: requires VNet + private DNS zone (same planned hardening task as CKV_AZURE_189/183)

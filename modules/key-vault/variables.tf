@@ -25,6 +25,12 @@ variable "secret_value" {
   description = "Value of the secret to store"
 }
 
+variable "secret_expiry_duration" {
+  type        = string
+  description = "TTL for the Key Vault secret from the time of last apply (e.g. '8760h' = 1 year). The secret expiration is extended each time terraform apply runs, so this is effectively a maximum drift window between applies before the secret expires."
+  default     = "8760h"
+}
+
 variable "tags" {
   type        = map(string)
   description = "Resource tags"

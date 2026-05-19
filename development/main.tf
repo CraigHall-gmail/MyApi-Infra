@@ -54,6 +54,7 @@ module "api_app" {
 }
 
 module "postgres" {
+  # checkov:skip=CKV_AZURE_136: B_Standard_B1ms Burstable SKU does not support geo-redundant backups
   source = "../modules/postgres"
 
   server_name                  = var.pg_server_name

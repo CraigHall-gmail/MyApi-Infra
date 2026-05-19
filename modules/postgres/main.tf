@@ -1,7 +1,5 @@
-# checkov:skip=CKV_AZURE_130: Private endpoint requires VNet, delegated subnet, and private DNS zone
-# which are not yet provisioned. Remediation is the same planned hardening task as CKV_AZURE_189.
-# Public access is restricted to Azure-hosted services only via the 0.0.0.0/0.0.0.0 firewall sentinel.
 resource "azurerm_postgresql_flexible_server" "this" {
+  # checkov:skip=CKV_AZURE_130: Private endpoint requires VNet + delegated subnet (planned hardening, same task as CKV_AZURE_189)
   name                = var.server_name
   resource_group_name = var.resource_group_name
   location            = var.location
@@ -25,10 +23,8 @@ resource "azurerm_postgresql_flexible_server" "this" {
   }
 }
 
-# checkov:skip=CKV_AZURE_131: The 0.0.0.0/0.0.0.0 sentinel is Azure's mechanism for allowing
-# Azure-hosted services (Container Apps) to connect without opening to the public internet.
-# This rule is removed as part of the same VNet/private-endpoint hardening task as CKV_AZURE_130.
 resource "azurerm_postgresql_flexible_server_firewall_rule" "azure_services" {
+  # checkov:skip=CKV_AZURE_131: 0.0.0.0/0.0.0.0 is Azure's sentinel for allowing Azure-hosted services only; removed when VNet integration lands (same task as CKV_AZURE_130)
   name             = "allow-azure-services"
   server_id        = azurerm_postgresql_flexible_server.this.id
   start_ip_address = "0.0.0.0"
