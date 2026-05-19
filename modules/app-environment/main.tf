@@ -20,9 +20,4 @@ resource "azurerm_container_app_environment" "this" {
   log_analytics_workspace_id = azurerm_log_analytics_workspace.this.id
   tags                       = var.tags
 
-  lifecycle {
-    # Destroying the environment changes the auto-generated base domain (e.g. lemonbeach-c7269874),
-    # breaking all app URLs. Terraform must be told explicitly to recreate it.
-    prevent_destroy = true
-  }
 }
