@@ -4,7 +4,6 @@ resource "azurerm_key_vault" "this" {
   # checkov:skip=CKV_AZURE_189: GitHub Actions hosted runners require public access to write secrets; planned fix is private endpoint + VNet-integrated runner
   # checkov:skip=CKV_AZURE_183: Network ACL default-deny requires the same private endpoint work as CKV_AZURE_189
 
-
   name                       = var.key_vault_name
   resource_group_name        = var.resource_group_name
   location                   = var.location

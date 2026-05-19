@@ -2,13 +2,31 @@
 # .checkov.yaml  –  Global Checkov suppressions
 # ──────────────────────────────────────────────────────────────────────────────
 #
-# Only graph checks (CKV2_*) belong here — they evaluate resource relationships
-# rather than resource attributes and do not respect inline checkov:skip comments.
-# Regular attribute checks (CKV_*) are suppressed inline on the resource block.
+# Contains two categories of suppression:
 #
-# Each entry must have a justification comment. Suppressions without a reason
-# will be rejected in code review.
+# 1. CKV2_* graph checks — evaluate resource relationships (e.g. "does a
+#    private endpoint exist pointing at this resource?") and do not respect
+#    inline checkov:skip comments. Must be suppressed here.
+#
+# 2. CKV_* checks that fail when evaluated from a calling module context —
+#    inline skips inside the module resource block are not applied when Checkov
+#    re-evaluates the check from the calling file. Also suppressed here.
+#
+# All suppressions share the same root cause: private endpoint / VNet
+# integration is not yet provisioned. The planned hardening work (tracked
+# against CKV_AZURE_189) will add a VNet module with private endpoints for
+# Key Vault and a delegated subnet for PostgreSQL Flexible Server, at which
+# point every entry below can be removed.
+#
+# Do not add suppressions without a justification comment.
 # ──────────────────────────────────────────────────────────────────────────────
 
 skip-check:
-  - CKV2_AZURE_5   # Key Vault private endpoint: requires VNet + private DNS zone (same planned hardening task as CKV_AZURE_189/183)
+  # ── Key Vault – network isolation ──────────────────────────────────────────
+  - CKV_AZURE_183   # Firewall rules / network ACL default-deny — requires private endpoint (same task as CKV_AZURE_189)
+  - CKV2_AZURE_5    # Private endpoint to Key Vault — requires VNet + private DNS zone
+  - CKV2_AZURE_32   # Private endpoint to Key Vault (duplicate policy, different ID) — same as CKV2_AZURE_5
+
+  # ── PostgreSQL Flexible Server – network isolation ─────────────────────────
+  - CKV2_AZURE_57   # Private endpoint for PostgreSQL — requires VNet + delegated subnet (same task as CKV_AZURE_130)
+  - CKV2_AZURE_26   # Overly permissive network access — 0.0.0.0/0.0.0.0 is Azure-services sentinel; removed with VNet integration
