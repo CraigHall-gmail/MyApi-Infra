@@ -97,3 +97,9 @@ variable "pg_storage_mb" {
   description = "PostgreSQL storage in MB"
   default     = 32768
 }
+
+variable "pg_geo_redundant_backup" {
+  type        = bool
+  description = "Enable geo-redundant backups. Must be false for Burstable SKUs (B_Standard_*)."
+  default     = false
+}

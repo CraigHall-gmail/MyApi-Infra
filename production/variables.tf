@@ -98,6 +98,12 @@ variable "pg_storage_mb" {
   default     = 65536
 }
 
+variable "pg_geo_redundant_backup" {
+  type        = bool
+  description = "Enable geo-redundant backups. Must be false for Burstable SKUs (B_Standard_*)."
+  default     = true
+}
+
 variable "pg_backup_retention_days" {
   type        = number
   description = "PostgreSQL backup retention in days"

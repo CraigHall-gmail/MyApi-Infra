@@ -60,9 +60,10 @@ module "postgres" {
   resource_group_name = module.environment.resource_group_name
   location            = module.environment.location
   admin_password      = var.pg_admin_password
-  sku_name            = var.pg_sku_name
-  storage_mb          = var.pg_storage_mb
-  tags                = var.tags
+  sku_name                     = var.pg_sku_name
+  storage_mb                   = var.pg_storage_mb
+  geo_redundant_backup_enabled = var.pg_geo_redundant_backup
+  tags                         = var.tags
 }
 
 module "key_vault" {

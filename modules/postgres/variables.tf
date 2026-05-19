@@ -49,6 +49,12 @@ variable "backup_retention_days" {
   default     = 7
 }
 
+variable "geo_redundant_backup_enabled" {
+  type        = bool
+  description = "Enable geo-redundant backups. Requires General Purpose or Memory Optimized SKU — must be false for Burstable (B_Standard_*) tiers."
+  default     = true
+}
+
 variable "tags" {
   type        = map(string)
   description = "Resource tags"
