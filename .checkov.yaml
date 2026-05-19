@@ -23,6 +23,7 @@
 
 skip-check:
   # ── Key Vault – network isolation ──────────────────────────────────────────
+  - CKV_AZURE_109   # Firewall rules (older alias for CKV_AZURE_183) — requires private endpoint (same task as CKV_AZURE_189)
   - CKV_AZURE_183   # Firewall rules / network ACL default-deny — requires private endpoint (same task as CKV_AZURE_189)
   - CKV2_AZURE_5    # Private endpoint to Key Vault — requires VNet + private DNS zone
   - CKV2_AZURE_32   # Private endpoint to Key Vault (duplicate policy, different ID) — same as CKV2_AZURE_5
