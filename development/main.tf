@@ -68,7 +68,6 @@ module "postgres" {
 }
 
 module "key_vault" {
-  # checkov:skip=CKV_AZURE_183: Network ACL default-deny requires private endpoint (planned hardening, same task as CKV_AZURE_189)
   source = "../modules/key-vault"
 
   key_vault_name      = var.pg_key_vault_name
