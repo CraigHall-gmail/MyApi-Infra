@@ -10,5 +10,5 @@
 # will be rejected in code review.
 # ──────────────────────────────────────────────────────────────────────────────
 
-skip-checks:
+skip-check:
   - CKV2_AZURE_5   # Key Vault private endpoint: requires VNet + private DNS zone (same planned hardening task as CKV_AZURE_189/183)
