@@ -1,0 +1,333 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Infra-CI.yml  –  Infrastructure CI: Validate, Plan & Apply
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Purpose:
+#   Continuous integration and delivery gate for all Terraform infrastructure.
+#   Runs on every pull_request targeting main and on every push to main.
+#
+# PR behaviour (pull_request targeting main):
+#   1. format-check  — terraform fmt -check -recursive across the whole repo
+#   2. validate      — terraform init -backend=false + terraform validate
+#                      for development, staging, and production (parallel matrix)
+#   3. plan          — full terraform plan for each environment; output is
+#                      posted as a PR comment for reviewer inspection
+#   Apply is skipped on PRs — the apply condition in _shared-terraform-planapply.yml
+#   gates on github.ref matching apply_branch, which is never true for a PR.
+#
+# Push-to-main behaviour (post-merge):
+#   Same format-check → validate → plan steps, then:
+#   4. apply         — terraform apply for each environment if plan detected
+#                      changes (exit code 2). Production is gated by required
+#                      reviewers on the 'production' GitHub Environment — no
+#                      extra workflow logic is required.
+#
+# Branch protection (one-time setup required):
+#   In repository Settings → Branches → main → Require status checks to pass,
+#   add 'CI Status' as a required check. All PRs must pass before merging.
+#   The check aggregates all job results into a single pass/fail signal so
+#   only one rule needs to be maintained in branch protection.
+#
+# Concurrency:
+#   • Pull requests:  cancel-in-progress=true  — new commits supersede old runs,
+#                     keeping PR feedback fast without queuing stale runs.
+#   • Push to main:   cancel-in-progress=false — queues runs to prevent
+#                     concurrent Terraform state modifications after merges.
+#   Per-environment concurrency groups (terraform-development / terraform-staging /
+#   terraform-production) match Infra-Provision-*.yml so CI and manual provision
+#   runs cannot interleave on the same Azure Blob state lease.
+#
+# Security scanning (parallel with validate, gates plan/apply):
+#   checkov    — static IaC analysis against CIS Azure benchmarks (1000+ policies).
+#                SARIF results are uploaded to the GitHub Security tab.
+#   sonarcloud — code quality and IaC security analysis. PR decoration and
+#                dashboard via SonarCloud. Requires SONAR_TOKEN secret and a
+#                sonar-project.properties file at the repository root.
+#
+# Required secrets (repository level or per GitHub Environment):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, PG_ADMIN_PASSWORD
+#   SONAR_TOKEN — SonarCloud authentication token (repository secret)
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: Infra - CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'development/**'
+      - 'staging/**'
+      - 'production/**'
+      - 'modules/**'
+      - '.github/workflows/Infra-CI.yml'
+      - '.github/workflows/_shared-terraform-planapply.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'development/**'
+      - 'staging/**'
+      - 'production/**'
+      - 'modules/**'
+      - '.github/workflows/Infra-CI.yml'
+      - '.github/workflows/_shared-terraform-planapply.yml'
+
+# Pull-request runs cancel when new commits arrive; push-to-main runs queue
+# so concurrent merges don't race on the same Terraform state.
+concurrency:
+  group: infra-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ── Job 1: Format Check ───────────────────────────────────────────────────
+  # Validates HCL formatting for every file in the repository in one pass.
+  # No Azure credentials required — completes in seconds and catches formatting
+  # issues before the slower plan jobs start.
+  format-check:
+    name: Format Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "1.8.0"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+  # ── Job 2: Validate (parallel matrix) ────────────────────────────────────
+  # Runs terraform validate for each environment using -backend=false so no
+  # Azure credentials or remote state access are required. Provider plugins are
+  # downloaded to validate resource and attribute schemas. All three environments
+  # run in parallel; fail-fast: false ensures all validation errors are surfaced
+  # in a single run rather than stopping at the first failure.
+  validate:
+    name: Validate (${{ matrix.env }})
+    needs: format-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [development, staging, production]
+    defaults:
+      run:
+        working-directory: ${{ matrix.env }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "1.8.0"
+
+      # -backend=false skips remote state initialisation so no Azure credentials
+      # are needed. Providers are still downloaded for schema validation.
+      - name: Terraform Init (no backend)
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+  # ── Job 3: Checkov Security Scan ─────────────────────────────────────────
+  # Static analysis of all Terraform against CIS Azure benchmarks and 1000+
+  # built-in policies. Runs in parallel with validate — no Azure credentials
+  # required. SARIF output is uploaded to the GitHub Security tab so findings
+  # are surfaced as code-scanning alerts on the PR and repository.
+  #
+  # To suppress a false positive inline, add a comment above the resource:
+  #   # checkov:skip=CKV_AZURE_XXX: reason why this is acceptable
+  # To suppress globally, add skipped_checks to .checkov.yaml at the repo root.
+  #
+  # NOTE: pin this action to a SHA following the project's existing convention.
+  # Find the SHA for the target tag at: github.com/bridgecrewio/checkov-action/releases
+  checkov:
+    name: Checkov Security Scan
+    needs: format-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # required to upload SARIF to GitHub Security tab
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Run Checkov
+        id: checkov
+        uses: bridgecrewio/checkov-action@v12  # pin to SHA – see note above
+        with:
+          directory: .
+          framework: terraform
+          # cli output keeps findings visible in the job log; sarif feeds the Security tab
+          output_format: cli,sarif
+          output_file_path: console,checkov-results.sarif
+          soft_fail: false
+          skip_path: bootstrap  # bootstrap scripts are not deployed infrastructure
+
+      - name: Upload SARIF to GitHub Security tab
+        # Run even when Checkov found issues so findings always reach the Security tab.
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3  # pin to SHA – see note above
+        with:
+          sarif_file: checkov-results.sarif
+          category: checkov
+
+  # ── Job 4: SonarCloud Analysis ────────────────────────────────────────────
+  # Runs SonarCloud analysis for IaC security hotspots, code quality issues,
+  # and hardcoded secrets across all HCL in the repository. PR decoration
+  # (inline comments and pass/fail status) is handled by the SonarCloud service.
+  #
+  # Prerequisites:
+  #   1. Create a SonarCloud project at sonarcloud.io and link this repository.
+  #   2. Add SONAR_TOKEN_INFRA as a repository secret in GitHub.
+  #   3. Update sonar-project.properties at the repo root with your org and key.
+  #
+  # fetch-depth: 0 is required for accurate blame data and PR diff analysis.
+  #
+  # NOTE: pin this action to a SHA following the project's existing convention.
+  # Find the SHA for the target tag at: github.com/SonarSource/sonarcloud-github-action/releases
+  sonarcloud:
+    name: SonarCloud Analysis
+    needs: format-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read  # allows SonarCloud to read PR context for decoration
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0  # full history required for blame and new-code detection
+
+      - name: SonarCloud Begin
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_INFRA }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dotnet sonarscanner begin \
+            /k:"CraigHall-gmail_MyApi_Infra" \
+            /o:"craighall-gmail" \
+            /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.qualitygate.wait=true \
+            /d:sonar.coverage.exclusions="Data/**,Models/**,Program.cs" \
+            /d:sonar.cs.cobertura.reportPaths="test-results/**/coverage.cobertura.xml" \
+            /d:sonar.cs.vstest.reportsPaths="test-results/*.trx" \
+            /d:sonar.sources=development,staging,production,modules
+            /d:sonar.exclusions=\
+            **/.terraform/**,\
+            **/*.tfstate,\
+            **/*.tfstate.backup,\
+            bootstrap/**
+
+  # ── Jobs 5–7: Plan & Apply (one job per environment) ─────────────────────
+  # Each job delegates to _shared-terraform-planapply.yml which handles:
+  #   • Full backend init with OIDC authentication against Azure
+  #   • terraform plan with -detailed-exitcode
+  #   • PR comment containing plan output (pull_request events only)
+  #   • terraform apply (push to main only, when plan exit code is 2)
+  #
+  # Apply is automatically skipped on PRs because the shared workflow's apply
+  # condition checks github.ref == refs/heads/<apply_branch>, which is never
+  # satisfied for a pull_request event.
+  #
+  # The production job uses the 'production' GitHub Environment which must have
+  # Required Reviewers configured in repository settings. This gates the apply
+  # step with a mandatory approval — no additional workflow logic is needed.
+  #
+  # Concurrency groups match Infra-Provision-*.yml to prevent this workflow and
+  # a concurrent manual provision run from interleaving on the same state file.
+
+  plan-apply-development:
+    name: Development
+    needs: [validate, checkov, sonarcloud]
+    concurrency:
+      group: terraform-development
+      cancel-in-progress: false
+    uses: ./.github/workflows/_shared-terraform-planapply.yml
+    with:
+      environment:               development
+      working_directory:         development
+      tf_version:                "1.8.0"
+      tf_state_storage_account:  myapiterraformstate
+      tf_state_container:        tfstate
+      tf_state_key:              development/api.tfstate
+      apply_branch:              main
+    secrets:
+      AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      PG_ADMIN_PASSWORD:     ${{ secrets.PG_ADMIN_PASSWORD }}
+
+  plan-apply-staging:
+    name: Staging
+    needs: [validate, checkov, sonarcloud]
+    concurrency:
+      group: terraform-staging
+      cancel-in-progress: false
+    uses: ./.github/workflows/_shared-terraform-planapply.yml
+    with:
+      environment:               staging
+      working_directory:         staging
+      tf_version:                "1.8.0"
+      tf_state_storage_account:  myapiterraformstate
+      tf_state_container:        tfstate
+      tf_state_key:              staging/api.tfstate
+      apply_branch:              main
+    secrets:
+      AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      PG_ADMIN_PASSWORD:     ${{ secrets.PG_ADMIN_PASSWORD }}
+
+  plan-apply-production:
+    name: Production
+    needs: [validate, checkov, sonarcloud]
+    concurrency:
+      group: terraform-production
+      cancel-in-progress: false
+    uses: ./.github/workflows/_shared-terraform-planapply.yml
+    with:
+      environment:               production
+      working_directory:         production
+      tf_version:                "1.8.0"
+      tf_state_storage_account:  myapiterraformstate
+      tf_state_container:        tfstate
+      tf_state_key:              production/api.tfstate
+      apply_branch:              main
+    secrets:
+      AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      PG_ADMIN_PASSWORD:     ${{ secrets.PG_ADMIN_PASSWORD }}
+
+  # ── Job 6: CI Status Gate ────────────────────────────────────────────────
+  # Aggregates all job results into a single status check.
+  #
+  # Setup: In repository Settings → Branches → main → Require status checks,
+  # add the name 'CI Status' as a required check. One rule covers every job
+  # in this pipeline — simpler to manage than individual job names, and the
+  # check always resolves (pass or fail) even when upstream jobs are cancelled,
+  # preventing PRs from being permanently blocked by a stale "pending" status.
+  ci-status:
+    name: CI Status
+    needs: [format-check, validate, checkov, sonarcloud, plan-apply-development, plan-apply-staging, plan-apply-production]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate CI result
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "Job results: $RESULTS"
+          if echo "$RESULTS" | grep -qE '"(failure|cancelled)"'; then
+            echo "One or more CI jobs failed or were cancelled."
+            exit 1
+          fi
+          echo "All CI jobs passed."
