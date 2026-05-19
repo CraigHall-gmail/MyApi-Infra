@@ -39,7 +39,7 @@ jobs:
     uses: ./.github/workflows/_shared-terraform-planapply.yml
     with:
       environment:               staging
-      working_directory:         infra/staging
+      working_directory:         staging
       tf_version:                "1.8.0"
       destroy:                   false
       tf_state_storage_account:  myapiterraformstate

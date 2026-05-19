@@ -62,17 +62,17 @@ jobs:
         run: |
           case "${{ inputs.environment }}" in
             development)
-              echo "working_directory=infra/development"    >> $GITHUB_OUTPUT
+              echo "working_directory=development"            >> $GITHUB_OUTPUT
               echo "tfstate_key=development/api.tfstate"    >> $GITHUB_OUTPUT
               echo "apply_branch=development"               >> $GITHUB_OUTPUT
               ;;
             staging)
-              echo "working_directory=infra/staging"        >> $GITHUB_OUTPUT
+              echo "working_directory=staging"              >> $GITHUB_OUTPUT
               echo "tfstate_key=staging/api.tfstate"        >> $GITHUB_OUTPUT
               echo "apply_branch=main"                      >> $GITHUB_OUTPUT
               ;;
             production)
-              echo "working_directory=infra/production"     >> $GITHUB_OUTPUT
+              echo "working_directory=production"           >> $GITHUB_OUTPUT
               echo "tfstate_key=production/api.tfstate"     >> $GITHUB_OUTPUT
               echo "apply_branch=main"                      >> $GITHUB_OUTPUT
               ;;

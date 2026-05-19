@@ -11,8 +11,8 @@
 #   • workflow_dispatch only — must be triggered manually from the Actions tab.
 #
 # Separation from CI/CD:
-#   App-CI.yml excludes infra/** via paths-ignore, and this workflow
-#   targets infra/development/** via paths. The two pipelines never overlap.
+#   App-CI.yml excludes infrastructure paths via paths-ignore, and this
+#   workflow targets development/** via paths. The two pipelines never overlap.
 #
 # Concurrency:
 #   One Terraform run per environment at a time. cancel-in-progress: false
@@ -59,7 +59,7 @@ jobs:
     uses: ./.github/workflows/_shared-terraform-planapply.yml
     with:
       environment:               development
-      working_directory:         infra/development
+      working_directory:         development
       tf_version:                "1.8.0"
       destroy:                   false
       tf_state_storage_account:  myapiterraformstate

@@ -38,7 +38,7 @@ jobs:
     uses: ./.github/workflows/_shared-terraform-planapply.yml
     with:
       environment:               production
-      working_directory:         infra/production
+      working_directory:         production
       tf_version:                "1.8.0"
       destroy:                   false
       tf_state_storage_account:  myapiterraformstate

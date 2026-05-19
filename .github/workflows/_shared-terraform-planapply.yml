@@ -19,7 +19,7 @@
 #
 # Inputs:
 #   environment              (required) GitHub environment name; gates approvals
-#   working_directory        (optional) Path to Terraform root  [infra/development]
+#   working_directory        (optional) Path to Terraform root  [development]
 #   tf_version               (optional) Terraform CLI version    [1.8.0]
 #   destroy                  (optional) Run terraform destroy instead of apply
 #   tf_state_storage_account (required) Azure Storage account for remote state
@@ -53,7 +53,7 @@ on:
       working_directory:
         required: false
         type: string
-        default: infra/development
+        default: development
       tf_version:
         required: false
         type: string

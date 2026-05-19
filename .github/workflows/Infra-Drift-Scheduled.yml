@@ -54,15 +54,15 @@ jobs:
         include:
           - env_name:       development
             gh_environment: development
-            infra_dir:      infra/development
+            infra_dir:      development
             tfstate_key:    development/api.tfstate
           - env_name:       staging
             gh_environment: environments-drift
-            infra_dir:      infra/staging
+            infra_dir:      staging
             tfstate_key:    staging/api.tfstate
           - env_name:       production
             gh_environment: environments-drift
-            infra_dir:      infra/production
+            infra_dir:      production
             tfstate_key:    production/api.tfstate
 
     defaults:
