@@ -247,6 +247,10 @@ jobs:
   plan-apply-development:
     name: Development
     needs: [validate, checkov, sonarcloud]
+    permissions:
+      id-token: write        # OIDC token for Azure login
+      contents: read
+      pull-requests: write   # post plan output as PR comment
     concurrency:
       group: terraform-development
       cancel-in-progress: false
@@ -268,6 +272,10 @@ jobs:
   plan-apply-staging:
     name: Staging
     needs: [validate, checkov, sonarcloud]
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
     concurrency:
       group: terraform-staging
       cancel-in-progress: false
@@ -289,6 +297,10 @@ jobs:
   plan-apply-production:
     name: Production
     needs: [validate, checkov, sonarcloud]
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
     concurrency:
       group: terraform-production
       cancel-in-progress: false
