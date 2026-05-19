@@ -13,7 +13,7 @@
 #   3. plan          — full terraform plan for each environment; output is
 #                      posted as a PR comment for reviewer inspection
 #   Apply is skipped on PRs — the apply condition in _shared-terraform-planapply.yml
-#   gates on github.ref matching apply_branch, which is never true for a PR.
+#   gates on github.ref matching apply_branch, which is never true for a PR. 
 #
 # Push-to-main behaviour (post-merge):
 #   Same format-check → validate → plan steps, then:
