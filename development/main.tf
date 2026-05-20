@@ -84,3 +84,16 @@ resource "azurerm_role_assignment" "kv_aca_secrets_user" {
   role_definition_name = "Key Vault Secrets User"
   principal_id         = module.api_app.identity_principal_id
 }
+
+# GitHub Actions service principal — recreated automatically on every provision
+resource "azurerm_role_assignment" "gh_contributor" {
+  scope                = module.environment.resource_group_id
+  role_definition_name = "Contributor"
+  principal_id         = var.github_actions_principal_id
+}
+
+resource "azurerm_role_assignment" "gh_user_access_admin" {
+  scope                = module.environment.resource_group_id
+  role_definition_name = "User Access Administrator"
+  principal_id         = var.github_actions_principal_id
+}

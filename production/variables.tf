@@ -109,3 +109,8 @@ variable "pg_backup_retention_days" {
   description = "PostgreSQL backup retention in days"
   default     = 14
 }
+
+variable "github_actions_principal_id" {
+  type        = string
+  description = "Object ID of the GitHub Actions service principal — granted Contributor + User Access Administrator on the resource group"
+}

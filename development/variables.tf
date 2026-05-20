@@ -103,3 +103,8 @@ variable "pg_geo_redundant_backup" {
   description = "Enable geo-redundant backups. Must be false for Burstable SKUs (B_Standard_*)."
   default     = false
 }
+
+variable "github_actions_principal_id" {
+  type        = string
+  description = "Object ID of the GitHub Actions service principal — granted Contributor + User Access Administrator on the resource group"
+}
