@@ -25,5 +25,5 @@ pg_key_vault_name       = "kv-myapi-dev"
 pg_sku_name             = "B_Standard_B1ms"
 pg_geo_redundant_backup = false # Burstable SKU does not support geo-redundant backups
 
-github_actions_principal_id = "f6f7a9ed-8174-46c5-a052-dfdf5ab62f91"
+github_actions_principal_id = "6eba19ed-4ad3-4380-93ba-e99d0563b1ab"
 pg_storage_mb               = 32768

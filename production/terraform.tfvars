@@ -25,4 +25,4 @@ pg_sku_name              = "GP_Standard_D2s_v3"
 pg_storage_mb            = 65536
 pg_backup_retention_days = 14
 
-github_actions_principal_id = "f6f7a9ed-8174-46c5-a052-dfdf5ab62f91"
+github_actions_principal_id = "6eba19ed-4ad3-4380-93ba-e99d0563b1ab"
