@@ -54,7 +54,8 @@ resource "azurerm_container_app_job" "runner" {
         "-c",
         <<-EOT
           set -e
-          apt-get update -qq && apt-get install -y -qq curl jq tar
+          apt-get update -qq && apt-get install -y -qq \
+            curl jq tar libicu70 libssl3 libkrb5-3 zlib1g
 
           RUNNER_VERSION=$(curl -fsSL \
             -H "Authorization: Bearer $${GITHUB_PAT}" \
@@ -64,7 +65,6 @@ resource "azurerm_container_app_job" "runner" {
           curl -fsSL -O \
             "https://github.com/actions/runner/releases/download/v$${RUNNER_VERSION}/actions-runner-linux-x64-$${RUNNER_VERSION}.tar.gz"
           tar xzf "actions-runner-linux-x64-$${RUNNER_VERSION}.tar.gz"
-          ./bin/installdependencies.sh
 
           JIT_RESPONSE=$(curl -fsSL \
             -X POST \
