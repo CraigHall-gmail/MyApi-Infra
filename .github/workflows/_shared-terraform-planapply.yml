@@ -86,6 +86,9 @@ on:
       PG_ADMIN_PASSWORD:
         required: true
         description: "PostgreSQL admin password (stored as TF_VAR_pg_admin_password)"
+      GH_RUNNER_PAT:
+        required: true
+        description: "GitHub classic PAT (manage_runners:org) for ACA Jobs runner registration (stored as TF_VAR_runner_pat)"
 
 jobs:
   # ── Job 1: Plan ───────────────────────────────────────────────────────────
@@ -111,6 +114,7 @@ jobs:
       ARM_SUBSCRIPTION_ID:       ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       ARM_USE_OIDC:              "true"
       TF_VAR_pg_admin_password:  ${{ secrets.PG_ADMIN_PASSWORD }}
+      TF_VAR_runner_pat:         ${{ secrets.GH_RUNNER_PAT }}
       TF_STATE_STORAGE_ACCOUNT:  ${{ inputs.tf_state_storage_account }}
       TF_STATE_CONTAINER:        ${{ inputs.tf_state_container }}
       TF_STATE_KEY:              ${{ inputs.tf_state_key }}
@@ -212,6 +216,7 @@ jobs:
       ARM_SUBSCRIPTION_ID:       ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       ARM_USE_OIDC:              "true"
       TF_VAR_pg_admin_password:  ${{ secrets.PG_ADMIN_PASSWORD }}
+      TF_VAR_runner_pat:         ${{ secrets.GH_RUNNER_PAT }}
       TF_STATE_STORAGE_ACCOUNT:  ${{ inputs.tf_state_storage_account }}
       TF_STATE_CONTAINER:        ${{ inputs.tf_state_container }}
       TF_STATE_KEY:              ${{ inputs.tf_state_key }}

@@ -4,7 +4,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.100"
+      version = "~> 4.0"
     }
   }
 
@@ -25,6 +25,34 @@ provider "azurerm" {
 data "azurerm_client_config" "current" {}
 
 # ── Modules ────────────────────────────────────────────────────────────────────
+module "vnet" {
+  source = "../modules/vnet"
+
+  vnet_name                     = "vnet-myapi-dev"
+  resource_group_name           = module.environment.resource_group_name
+  location                      = module.environment.location
+  address_space                 = var.vnet_address_space
+  aca_subnet_cidr               = "10.0.0.0/23"
+  postgres_subnet_cidr          = "10.0.4.0/24"
+  private_endpoints_subnet_cidr = "10.0.5.0/24"
+  runner_subnet_cidr            = "10.0.6.0/27"
+  tags                          = var.tags
+}
+
+module "runner" {
+  source = "../modules/runner"
+
+  job_name            = "job-runner-dev"
+  resource_group_name = module.environment.resource_group_name
+  location            = module.environment.location
+  aca_env_id          = module.environment.aca_env_id
+  github_org          = var.github_org
+  runner_pat          = var.runner_pat
+  environment         = "dev"
+  runner_labels       = "self-hosted,azure,dev"
+  tags                = var.tags
+}
+
 module "environment" {
   source = "../modules/app-environment"
 

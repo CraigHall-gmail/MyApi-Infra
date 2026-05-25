@@ -27,3 +27,9 @@ pg_geo_redundant_backup = false # Burstable SKU does not support geo-redundant b
 
 github_actions_principal_id = "6eba19ed-4ad3-4380-93ba-e99d0563b1ab"
 pg_storage_mb               = 32768
+
+# VNet — subnets are hardcoded in main.tf; only the top-level CIDR is variable
+vnet_address_space = "10.0.0.0/16"
+
+# GitHub runner — runner_pat is supplied via TF_VAR_runner_pat (GitHub Secret)
+github_org = "HallCraig"

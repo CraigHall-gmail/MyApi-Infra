@@ -108,3 +108,20 @@ variable "github_actions_principal_id" {
   type        = string
   description = "Object ID of the GitHub Actions service principal — granted Contributor + User Access Administrator on the resource group"
 }
+
+variable "vnet_address_space" {
+  type        = string
+  description = "CIDR block for the development VNet"
+  default     = "10.0.0.0/16"
+}
+
+variable "github_org" {
+  type        = string
+  description = "GitHub organisation name — self-hosted runners register at org scope"
+}
+
+variable "runner_pat" {
+  type        = string
+  sensitive   = true
+  description = "GitHub classic PAT with manage_runners:org scope — injected via TF_VAR_runner_pat in CI"
+}
