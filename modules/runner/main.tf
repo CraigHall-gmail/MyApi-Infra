@@ -13,7 +13,7 @@ resource "azurerm_container_app_job" "runner" {
     replica_completion_count = 1
 
     scale {
-      min_executions              = 0  # scales to zero when no jobs are queued
+      min_executions              = 0 # scales to zero when no jobs are queued
       max_executions              = var.max_concurrent_runners
       polling_interval_in_seconds = 30
 
