@@ -87,8 +87,8 @@ on:
         required: true
         description: "PostgreSQL admin password (stored as TF_VAR_pg_admin_password)"
       GH_RUNNER_PAT:
-        required: true
-        description: "GitHub classic PAT (manage_runners:org) for ACA Jobs runner registration (stored as TF_VAR_runner_pat)"
+        required: false
+        description: "GitHub classic PAT (manage_runners:org) for ACA Jobs runner registration (stored as TF_VAR_runner_pat). Only required for environments where the runner module is deployed."
 
 jobs:
   # ── Job 1: Plan ───────────────────────────────────────────────────────────
