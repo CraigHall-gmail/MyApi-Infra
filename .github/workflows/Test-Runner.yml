@@ -1,0 +1,29 @@
+name: Test - Self-Hosted Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Runner smoke test (dev)
+    runs-on: [self-hosted, azure, dev]
+    steps:
+      - name: Confirm runner identity
+        run: |
+          echo "Runner name:  $RUNNER_NAME"
+          echo "Runner OS:    $RUNNER_OS"
+          echo "Hostname:     $(hostname)"
+          echo "Working dir:  $(pwd)"
+
+      - name: Confirm Azure reachability
+        run: |
+          curl -fsSL -o /dev/null -w "Azure management: %{http_code}\n" \
+            https://management.azure.com/
+
+      - name: Confirm GitHub reachability
+        run: |
+          curl -fsSL -o /dev/null -w "GitHub API: %{http_code}\n" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            https://api.github.com/
+    permissions:
+      contents: read
