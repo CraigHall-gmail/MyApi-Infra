@@ -179,20 +179,62 @@
 
 ---
 
-## 6. Subnet Reference
+## 6. Subnet & NSG Reference
 
-| Subnet | CIDR (dev) | Delegation | Contents |
+| Subnet | CIDR (dev) | NSG | Delegation |
 |---|---|---|---|
-| `snet-aca` | `10.0.0.0/23` | `Microsoft.App/environments` | ACA Environment + Container App |
-| `snet-postgres` | `10.0.4.0/24` | `Microsoft.DBforPostgreSQL/flexibleServers` | PostgreSQL Flexible Server |
-| `snet-private-endpoints` | `10.0.5.0/24` | none | Key Vault private endpoint NIC |
-| `snet-runner` | `10.0.6.0/27` | none | ACA Jobs self-hosted runner |
+| `snet-aca` | `10.0.0.0/23` | `nsg-aca-myapi-{env}` | `Microsoft.App/environments` |
+| `snet-postgres` | `10.0.4.0/24` | `nsg-postgres-myapi-{env}` | `Microsoft.DBforPostgreSQL/flexibleServers` |
+| `snet-private-endpoints` | `10.0.5.0/24` | `nsg-pe-myapi-{env}` | none |
+| `snet-runner` | `10.0.6.0/27` | `nsg-runner-myapi-{env}` | none |
 
 Staging uses `10.1.x.x` and production uses `10.2.x.x` with the same layout.
 
 ---
 
-## 7. Key Design Decisions
+## 7. NSG Inbound Rules
+
+```
+  nsg-aca-myapi-{env}
+  ┌──────┬──────────────────────────┬───────┬──────────┐
+  │ Pri  │ Source                   │ Port  │ Action   │
+  ├──────┼──────────────────────────┼───────┼──────────┤
+  │  100 │ Internet                 │  443  │ Allow    │  ← public HTTPS ingress
+  │  110 │ AzureLoadBalancer        │  *    │ Allow    │  ← ACA health probes
+  │  120 │ VirtualNetwork           │  *    │ Allow    │  ← ACA internal management
+  │ 4096 │ *                        │  *    │ Deny     │
+  └──────┴──────────────────────────┴───────┴──────────┘
+
+  nsg-postgres-myapi-{env}
+  ┌──────┬──────────────────────────┬───────┬──────────┐
+  │ Pri  │ Source                   │ Port  │ Action   │
+  ├──────┼──────────────────────────┼───────┼──────────┤
+  │  100 │ VirtualNetwork           │ 5432  │ Allow    │  ← app + runner → DB
+  │ 4096 │ *                        │  *    │ Deny     │
+  └──────┴──────────────────────────┴───────┴──────────┘
+
+  nsg-pe-myapi-{env}  (private endpoints)
+  ┌──────┬──────────────────────────┬───────┬──────────┐
+  │ Pri  │ Source                   │ Port  │ Action   │
+  ├──────┼──────────────────────────┼───────┼──────────┤
+  │  100 │ VirtualNetwork           │  443  │ Allow    │  ← Key Vault HTTPS
+  │ 4096 │ *                        │  *    │ Deny     │
+  └──────┴──────────────────────────┴───────┴──────────┘
+
+  nsg-runner-myapi-{env}
+  ┌──────┬──────────────────────────┬───────┬──────────┐
+  │ Pri  │ Source                   │ Port  │ Action   │
+  ├──────┼──────────────────────────┼───────┼──────────┤
+  │ 4096 │ *                        │  *    │ Deny     │  ← runner is outbound-only
+  └──────┴──────────────────────────┴───────┴──────────┘
+
+  All NSGs: outbound left to Azure defaults (allow VNet + Internet).
+  Runner outbound to GitHub (443) and Azure services is unrestricted.
+```
+
+---
+
+## 8. Key Design Decisions
 
 | Decision | Reason |
 |---|---|
@@ -202,3 +244,4 @@ Staging uses `10.1.x.x` and production uses `10.2.x.x` with the same layout.
 | Runner in its **own subnet** | Runner needs internet egress (GitHub.com) and VNet access (Key Vault); isolation limits blast radius |
 | **No VNet peering** between environments | A compromised dev runner cannot reach staging or production resources |
 | **Three separate VNets** | Matches existing per-environment resource group isolation pattern |
+| **NSG on every subnet** | CKV2_AZURE_31 compliance; also provides defence-in-depth at the network layer |
