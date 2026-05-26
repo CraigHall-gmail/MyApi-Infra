@@ -57,23 +57,32 @@ resource "azurerm_container_app_job" "runner" {
           apt-get update -qq && apt-get install -y -qq \
             curl jq tar libicu70 libssl3 libkrb5-3 zlib1g
 
+          echo "==> Fetching runner version (org=$${GITHUB_ORG})"
           RUNNER_VERSION=$(curl -fsSL \
             -H "Authorization: Bearer $${GITHUB_PAT}" \
             "https://api.github.com/repos/actions/runner/releases/latest" \
             | jq -r '.tag_name' | sed 's/v//')
+          echo "==> Runner version: $${RUNNER_VERSION}"
 
+          echo "==> Downloading runner tarball"
           curl -fsSL -O \
             "https://github.com/actions/runner/releases/download/v$${RUNNER_VERSION}/actions-runner-linux-x64-$${RUNNER_VERSION}.tar.gz"
           tar xzf "actions-runner-linux-x64-$${RUNNER_VERSION}.tar.gz"
 
-          JIT_RESPONSE=$(curl -fsSL \
+          echo "==> Calling generate-jitconfig"
+          JIT_RESPONSE=$(curl -sSL \
             -X POST \
             -H "Authorization: Bearer $${GITHUB_PAT}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/orgs/$${GITHUB_ORG}/actions/runners/generate-jitconfig" \
             -d "{\"name\":\"azure-$(hostname)-$(date +%s)\",\"runner_group_id\":1,\"labels\":[\"self-hosted\",\"azure\",\"$${ENVIRONMENT}\"],\"work_folder\":\"_work\"}")
+          echo "==> JIT response: $${JIT_RESPONSE}"
           JIT_CONFIG=$(echo "$${JIT_RESPONSE}" | jq -r '.encoded_jit_config')
+          if [ "$${JIT_CONFIG}" = "null" ] || [ -z "$${JIT_CONFIG}" ]; then
+            echo "ERROR: JIT config is empty — check GITHUB_ORG and PAT scopes"
+            exit 1
+          fi
           exec ./run.sh --jitconfig "$${JIT_CONFIG}"
         EOT
       ]
