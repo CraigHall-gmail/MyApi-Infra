@@ -17,7 +17,7 @@ jobs:
 
       - name: Confirm Azure reachability
         run: |
-          curl -fsSL -o /dev/null -w "Azure management: %{http_code}\n" \
+          curl -sSL -o /dev/null -w "Azure management: %{http_code}\n" \
             https://management.azure.com/
 
       - name: Confirm GitHub reachability
