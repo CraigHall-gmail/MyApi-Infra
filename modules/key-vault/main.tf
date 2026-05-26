@@ -1,15 +1,16 @@
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_key_vault" "this" {
-  name                       = var.key_vault_name
-  resource_group_name        = var.resource_group_name
-  location                   = var.location
-  tenant_id                  = data.azurerm_client_config.current.tenant_id
-  sku_name                   = "standard"
-  rbac_authorization_enabled = true
-  soft_delete_retention_days = 90
-  purge_protection_enabled   = true
-  tags                       = var.tags
+  name                          = var.key_vault_name
+  resource_group_name           = var.resource_group_name
+  location                      = var.location
+  tenant_id                     = data.azurerm_client_config.current.tenant_id
+  sku_name                      = "standard"
+  rbac_authorization_enabled    = true
+  soft_delete_retention_days    = 90
+  purge_protection_enabled      = true
+  public_network_access_enabled = false
+  tags                          = var.tags
 
   network_acls {
     bypass         = "AzureServices"
@@ -18,6 +19,7 @@ resource "azurerm_key_vault" "this" {
 }
 
 resource "azurerm_private_endpoint" "this" {
+  count               = var.private_endpoint_subnet_id != null ? 1 : 0
   name                = "pe-${var.key_vault_name}"
   resource_group_name = var.resource_group_name
   location            = var.location

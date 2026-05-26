@@ -33,12 +33,14 @@ variable "secret_expiry_duration" {
 
 variable "private_endpoint_subnet_id" {
   type        = string
-  description = "Subnet ID for the Key Vault private endpoint NIC"
+  description = "Subnet ID for the Key Vault private endpoint NIC. Null = no private endpoint (public access via network ACL bypass)."
+  default     = null
 }
 
 variable "private_dns_zone_id" {
   type        = string
-  description = "Resource ID of the privatelink.vaultcore.azure.net private DNS zone"
+  description = "Resource ID of the privatelink.vaultcore.azure.net private DNS zone. Required when private_endpoint_subnet_id is set."
+  default     = null
 }
 
 variable "tags" {
