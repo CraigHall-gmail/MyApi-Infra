@@ -254,7 +254,7 @@ jobs:
       tf_state_container:        tfstate
       tf_state_key:              development/api.tfstate
       apply_branch:              main
-      runner:                    "ubuntu-latest" # temp: bootstrap az CLI into runner definition
+      # runner omitted — uses shared workflow default (ubuntu-latest) to bootstrap az CLI into runner definition
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}

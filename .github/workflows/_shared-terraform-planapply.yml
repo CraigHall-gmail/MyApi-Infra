@@ -79,8 +79,8 @@ on:
       runner:
         required: false
         type: string
-        default: "ubuntu-latest"
-        description: "Runner label(s) for plan and apply jobs. Pass a JSON array string for self-hosted (e.g. '[\"self-hosted\",\"azure\",\"dev\"]')."
+        default: '"ubuntu-latest"'
+        description: "JSON-encoded runner value for runs-on. Plain string: '\"ubuntu-latest\"'. Array: '[\"self-hosted\",\"azure\",\"dev\"]'."
     secrets:
       AZURE_CLIENT_ID:
         required: true
