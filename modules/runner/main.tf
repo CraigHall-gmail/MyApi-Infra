@@ -56,7 +56,11 @@ resource "azurerm_container_app_job" "runner" {
         <<-EOT
           set -e
           apt-get update -qq && apt-get install -y -qq \
-            curl jq tar libicu70 libssl3 libkrb5-3 zlib1g
+            curl jq tar libicu70 libssl3 libkrb5-3 zlib1g \
+            ca-certificates gnupg lsb-release
+
+          # Azure CLI — required by azure/login action in hosted workflows
+          curl -fsSL https://aka.ms/InstallAzureCLIDeb | bash
 
           RUNNER_VERSION=$(curl -fsSL \
             -H "Authorization: Bearer $${GITHUB_PAT}" \
