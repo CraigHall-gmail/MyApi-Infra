@@ -108,6 +108,11 @@ resource "azurerm_container_app_job" "runner" {
         name  = "ENVIRONMENT"
         value = var.environment
       }
+
+      env {
+        name  = "RUNNER_ALLOW_RUNASROOT"
+        value = "1"
+      }
     }
   }
 
