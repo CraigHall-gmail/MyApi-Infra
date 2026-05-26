@@ -76,6 +76,11 @@ on:
         type: string
         default: development
         description: "Branch on which terraform apply is permitted (push events only)"
+      runner:
+        required: false
+        type: string
+        default: "ubuntu-latest"
+        description: "Runner label(s) for plan and apply jobs. Pass a JSON array string for self-hosted (e.g. '[\"self-hosted\",\"azure\",\"dev\"]')."
     secrets:
       AZURE_CLIENT_ID:
         required: true
@@ -95,7 +100,7 @@ jobs:
   # Runs on every trigger. Posts plan output to PRs; apply re-plans independently.
   plan:
     name: Plan (${{ inputs.environment }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     environment: ${{ inputs.environment }}
     permissions:
       id-token: write
@@ -201,7 +206,7 @@ jobs:
       (github.ref == format('refs/heads/{0}', inputs.apply_branch) ||
        github.event_name == 'workflow_dispatch') &&
       needs.plan.outputs.plan_exit_code == '2'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     environment: ${{ inputs.environment }}
     permissions:
       id-token: write

@@ -1,10 +1,6 @@
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_key_vault" "this" {
-  # checkov:skip=CKV_AZURE_189: GitHub Actions hosted runners require public access to write secrets; planned fix is private endpoint + VNet-integrated runner
-  # checkov:skip=CKV_AZURE_109: Firewall rules (alias for CKV_AZURE_183) — requires private endpoint, same planned hardening task
-  # checkov:skip=CKV_AZURE_183: Network ACL default-deny requires the same private endpoint work as CKV_AZURE_189
-
   name                       = var.key_vault_name
   resource_group_name        = var.resource_group_name
   location                   = var.location
@@ -14,6 +10,31 @@ resource "azurerm_key_vault" "this" {
   soft_delete_retention_days = 90
   purge_protection_enabled   = true
   tags                       = var.tags
+
+  network_acls {
+    bypass         = "AzureServices"
+    default_action = "Deny"
+  }
+}
+
+resource "azurerm_private_endpoint" "this" {
+  name                = "pe-${var.key_vault_name}"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  subnet_id           = var.private_endpoint_subnet_id
+  tags                = var.tags
+
+  private_service_connection {
+    name                           = "psc-${var.key_vault_name}"
+    private_connection_resource_id = azurerm_key_vault.this.id
+    subresource_names              = ["vault"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "dzg-${var.key_vault_name}"
+    private_dns_zone_ids = [var.private_dns_zone_id]
+  }
 }
 
 # Terraform runner (GitHub Actions OIDC identity) — write secrets during provisioning
@@ -30,5 +51,5 @@ resource "azurerm_key_vault_secret" "this" {
   expiration_date = timeadd(plantimestamp(), var.secret_expiry_duration)
   key_vault_id    = azurerm_key_vault.this.id
 
-  depends_on = [azurerm_role_assignment.kv_secrets_officer]
+  depends_on = [azurerm_role_assignment.kv_secrets_officer, azurerm_private_endpoint.this]
 }

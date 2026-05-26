@@ -31,6 +31,16 @@ variable "secret_expiry_duration" {
   default     = "8760h"
 }
 
+variable "private_endpoint_subnet_id" {
+  type        = string
+  description = "Subnet ID for the Key Vault private endpoint NIC"
+}
+
+variable "private_dns_zone_id" {
+  type        = string
+  description = "Resource ID of the privatelink.vaultcore.azure.net private DNS zone"
+}
+
 variable "tags" {
   type        = map(string)
   description = "Resource tags"

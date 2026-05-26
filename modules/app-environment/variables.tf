@@ -19,6 +19,12 @@ variable "aca_env_name" {
   description = "Name of the Azure Container App Environment"
 }
 
+variable "infrastructure_subnet_id" {
+  type        = string
+  description = "Subnet ID (delegated to Microsoft.App/environments) for VNet-injected ACA Environment. Null = public environment."
+  default     = null
+}
+
 variable "tags" {
   type        = map(string)
   description = "Resource tags"

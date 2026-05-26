@@ -24,6 +24,38 @@ provider "azurerm" {
 
 data "azurerm_client_config" "current" {}
 
+# ── Private DNS Zones ───────────────────────────────────────────────────────────
+
+resource "azurerm_private_dns_zone" "postgres" {
+  name                = "${var.pg_server_name}.private.postgres.database.azure.com"
+  resource_group_name = module.environment.resource_group_name
+  tags                = var.tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "postgres" {
+  name                  = "link-postgres-vnet-myapi-dev"
+  resource_group_name   = module.environment.resource_group_name
+  private_dns_zone_name = azurerm_private_dns_zone.postgres.name
+  virtual_network_id    = module.vnet.vnet_id
+  registration_enabled  = false
+  tags                  = var.tags
+}
+
+resource "azurerm_private_dns_zone" "key_vault" {
+  name                = "privatelink.vaultcore.azure.net"
+  resource_group_name = module.environment.resource_group_name
+  tags                = var.tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "key_vault" {
+  name                  = "link-kv-vnet-myapi-dev"
+  resource_group_name   = module.environment.resource_group_name
+  private_dns_zone_name = azurerm_private_dns_zone.key_vault.name
+  virtual_network_id    = module.vnet.vnet_id
+  registration_enabled  = false
+  tags                  = var.tags
+}
+
 # ── Modules ────────────────────────────────────────────────────────────────────
 module "vnet" {
   source = "../modules/vnet"
@@ -39,6 +71,17 @@ module "vnet" {
   tags                          = var.tags
 }
 
+module "environment" {
+  source = "../modules/app-environment"
+
+  resource_group           = var.resource_group
+  location                 = var.location
+  law_name                 = var.law_name_env
+  aca_env_name             = var.aca_name_env
+  infrastructure_subnet_id = module.vnet.aca_subnet_id
+  tags                     = var.tags
+}
+
 module "runner" {
   source = "../modules/runner"
 
@@ -52,16 +95,6 @@ module "runner" {
   environment         = "dev"
   runner_labels       = "self-hosted,azure,dev"
   tags                = var.tags
-}
-
-module "environment" {
-  source = "../modules/app-environment"
-
-  resource_group = var.resource_group
-  location       = var.location
-  law_name       = var.law_name_env
-  aca_env_name   = var.aca_name_env
-  tags           = var.tags
 }
 
 module "api_app" {
@@ -93,17 +126,25 @@ module "postgres" {
   sku_name                     = var.pg_sku_name
   storage_mb                   = var.pg_storage_mb
   geo_redundant_backup_enabled = var.pg_geo_redundant_backup
+  delegated_subnet_id          = module.vnet.postgres_subnet_id
+  private_dns_zone_id          = azurerm_private_dns_zone.postgres.id
   tags                         = var.tags
+
+  depends_on = [azurerm_private_dns_zone_virtual_network_link.postgres]
 }
 
 module "key_vault" {
   source = "../modules/key-vault"
 
-  key_vault_name      = var.pg_key_vault_name
-  resource_group_name = module.environment.resource_group_name
-  location            = module.environment.location
-  secret_value        = module.postgres.connection_string
-  tags                = var.tags
+  key_vault_name             = var.pg_key_vault_name
+  resource_group_name        = module.environment.resource_group_name
+  location                   = module.environment.location
+  secret_value               = module.postgres.connection_string
+  private_endpoint_subnet_id = module.vnet.private_endpoints_subnet_id
+  private_dns_zone_id        = azurerm_private_dns_zone.key_vault.id
+  tags                       = var.tags
+
+  depends_on = [azurerm_private_dns_zone_virtual_network_link.key_vault]
 }
 
 # Grant the ACA managed identity read access to the Key Vault so it can be

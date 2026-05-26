@@ -55,6 +55,16 @@ variable "geo_redundant_backup_enabled" {
   default     = true
 }
 
+variable "delegated_subnet_id" {
+  type        = string
+  description = "Subnet ID delegated to Microsoft.DBforPostgreSQL/flexibleServers for VNet injection"
+}
+
+variable "private_dns_zone_id" {
+  type        = string
+  description = "Resource ID of the private DNS zone for the Flexible Server (*.private.postgres.database.azure.com)"
+}
+
 variable "tags" {
   type        = map(string)
   description = "Resource tags"
