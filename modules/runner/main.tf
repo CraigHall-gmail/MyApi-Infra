@@ -77,7 +77,7 @@ resource "azurerm_container_app_job" "runner" {
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/$${GITHUB_OWNER}/$${GITHUB_REPO}/actions/runners/generate-jitconfig" \
-            -d "{\"name\":\"azure-$(hostname)-$(date +%s)\",\"labels\":[\"self-hosted\",\"azure\",\"$${ENVIRONMENT}\"],\"work_folder\":\"_work\"}")
+            -d "{\"name\":\"azure-$(hostname)-$(date +%s)\",\"runner_group_id\":1,\"labels\":[\"self-hosted\",\"azure\",\"$${ENVIRONMENT}\"],\"work_folder\":\"_work\"}")
           echo "==> JIT response: $${JIT_RESPONSE}"
           JIT_CONFIG=$(echo "$${JIT_RESPONSE}" | jq -r '.encoded_jit_config')
           if [ "$${JIT_CONFIG}" = "null" ] || [ -z "$${JIT_CONFIG}" ]; then
