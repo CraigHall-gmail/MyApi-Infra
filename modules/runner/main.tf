@@ -65,10 +65,11 @@ resource "azurerm_container_app_job" "runner" {
             | jq -r '.tag_name' | sed 's/v//')
           echo "==> Runner version: $${RUNNER_VERSION}"
 
+          mkdir /runner && cd /runner
           echo "==> Downloading runner tarball"
           curl -fsSL -O \
             "https://github.com/actions/runner/releases/download/v$${RUNNER_VERSION}/actions-runner-linux-x64-$${RUNNER_VERSION}.tar.gz"
-          tar xzf "actions-runner-linux-x64-$${RUNNER_VERSION}.tar.gz"
+          tar xzf "actions-runner-linux-x64-$${RUNNER_VERSION}.tar.gz" && rm "actions-runner-linux-x64-$${RUNNER_VERSION}.tar.gz"
 
           echo "==> Calling generate-jitconfig"
           JIT_RESPONSE=$(curl -sSL \
