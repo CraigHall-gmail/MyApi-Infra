@@ -18,15 +18,20 @@ variable "aca_env_id" {
   description = "Resource ID of the Container App Environment to host the runner job"
 }
 
-variable "github_org" {
+variable "github_owner" {
   type        = string
-  description = "GitHub organisation name — runners register at org scope"
+  description = "GitHub account or org name (owner of the repository)"
+}
+
+variable "github_repo" {
+  type        = string
+  description = "GitHub repository name — runners register at repo scope"
 }
 
 variable "runner_pat" {
   type        = string
   sensitive   = true
-  description = "GitHub classic PAT with manage_runners:org scope — used for KEDA scaling and JIT runner registration"
+  description = "GitHub classic PAT with repo scope — used for KEDA scaling and JIT runner registration"
 }
 
 variable "environment" {

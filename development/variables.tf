@@ -115,13 +115,18 @@ variable "vnet_address_space" {
   default     = "10.0.0.0/16"
 }
 
-variable "github_org" {
+variable "github_owner" {
   type        = string
-  description = "GitHub organisation name — self-hosted runners register at org scope"
+  description = "GitHub account or org name (owner of the repository)"
+}
+
+variable "github_repo" {
+  type        = string
+  description = "GitHub repository name — runners register at repo scope"
 }
 
 variable "runner_pat" {
   type        = string
   sensitive   = true
-  description = "GitHub classic PAT with manage_runners:org scope — injected via TF_VAR_runner_pat in CI"
+  description = "GitHub classic PAT with repo scope — injected via TF_VAR_runner_pat in CI"
 }

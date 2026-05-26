@@ -32,4 +32,5 @@ pg_storage_mb               = 32768
 vnet_address_space = "10.0.0.0/16"
 
 # GitHub runner — runner_pat is supplied via TF_VAR_runner_pat (GitHub Secret)
-github_org = "CraigHall-gmail"
+github_owner = "CraigHall-gmail"
+github_repo  = "MyApi-Infra"

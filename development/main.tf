@@ -46,7 +46,8 @@ module "runner" {
   resource_group_name = module.environment.resource_group_name
   location            = module.environment.location
   aca_env_id          = module.environment.aca_env_id
-  github_org          = var.github_org
+  github_owner        = var.github_owner
+  github_repo         = var.github_repo
   runner_pat          = var.runner_pat
   environment         = "dev"
   runner_labels       = "self-hosted,azure,dev"
