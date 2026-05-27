@@ -139,6 +139,9 @@ jobs:
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: ${{ inputs.tf_version }}
+          # Wrapper requires system node — disabled for self-hosted runner compatibility.
+          # Exit code and stdout are captured manually in the Plan step below.
+          terraform_wrapper: false
 
       - name: Terraform Init
         run: |
@@ -155,16 +158,25 @@ jobs:
         run: terraform validate
 
       # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes pending.
-      # continue-on-error lets exit code 2 fall through; Fail step below catches 1.
+      # Stdout and exit code are captured manually (terraform_wrapper is disabled).
       - name: Terraform Plan
         id: plan
         run: |
+          set +e
           terraform plan \
             -var-file="terraform.tfvars" \
             -out=tfplan \
             -detailed-exitcode \
             -lock-timeout=5m \
-            ${{ inputs.destroy && '-destroy' || '' }}
+            ${{ inputs.destroy && '-destroy' || '' }} > plan_output.txt 2>&1
+          PLAN_EXIT=$?
+          cat plan_output.txt
+          echo "exitcode=$PLAN_EXIT" >> $GITHUB_OUTPUT
+          {
+            echo 'stdout<<EOF'
+            cat plan_output.txt
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
         continue-on-error: true
 
       # Posts the plan as a PR comment so reviewers can inspect changes.
@@ -241,6 +253,7 @@ jobs:
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: ${{ inputs.tf_version }}
+          terraform_wrapper: false
 
       - name: Terraform Init
         run: |
