@@ -15,7 +15,7 @@ resource "azurerm_container_app_job" "runner" {
     scale {
       min_executions              = 0 # scales to zero when no jobs are queued
       max_executions              = var.max_concurrent_runners
-      polling_interval_in_seconds = 30
+      polling_interval_in_seconds = 20
 
       rules {
         name             = "github-runner-scaler"
