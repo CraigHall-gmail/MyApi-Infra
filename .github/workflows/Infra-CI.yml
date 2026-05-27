@@ -254,7 +254,7 @@ jobs:
       tf_state_container:        tfstate
       tf_state_key:              development/api.tfstate
       apply_branch:              main
-      # runner omitted — uses shared workflow default (ubuntu-latest) to bootstrap az CLI into runner definition
+      runner:                    '["self-hosted","azure","dev"]'
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
