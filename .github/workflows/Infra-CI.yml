@@ -244,6 +244,7 @@ jobs:
     name: Start Dev Runner
     needs: [validate, checkov, sonarcloud]
     runs-on: ubuntu-latest
+    environment: development
     permissions:
       id-token: write
       contents: read
