@@ -71,3 +71,4 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       PG_ADMIN_PASSWORD:     ${{ secrets.PG_ADMIN_PASSWORD }}
       GH_RUNNER_PAT:         ${{ secrets.GH_RUNNER_PAT }}
+      GH_RUNNER_APP_PAT:     ${{ secrets.GH_RUNNER_APP_PAT }}

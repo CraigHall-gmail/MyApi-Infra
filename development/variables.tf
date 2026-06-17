@@ -130,3 +130,9 @@ variable "runner_pat" {
   sensitive   = true
   description = "GitHub classic PAT with repo scope — injected via TF_VAR_runner_pat in CI"
 }
+
+variable "runner_app_pat" {
+  type        = string
+  sensitive   = true
+  description = "GitHub classic PAT with repo scope for the application repo (MyApi) — injected via TF_VAR_runner_app_pat in CI"
+}

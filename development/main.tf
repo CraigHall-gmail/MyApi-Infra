@@ -97,6 +97,21 @@ module "runner" {
   tags                = var.tags
 }
 
+module "runner_app" {
+  source = "../modules/runner"
+
+  job_name            = "job-runner-app-dev"
+  resource_group_name = module.environment.resource_group_name
+  location            = module.environment.location
+  aca_env_id          = module.environment.aca_env_id
+  github_owner        = var.github_owner
+  github_repo         = "MyApi"
+  runner_pat          = var.runner_app_pat
+  environment         = "dev"
+  runner_labels       = "self-hosted,azure,dev"
+  tags                = var.tags
+}
+
 module "api_app" {
   source = "../modules/container-app"
 
