@@ -114,3 +114,31 @@ variable "github_actions_principal_id" {
   type        = string
   description = "Object ID of the GitHub Actions service principal — granted Contributor + User Access Administrator on the resource group"
 }
+
+variable "vnet_address_space" {
+  type        = string
+  description = "CIDR block for the production VNet"
+  default     = "10.2.0.0/16"
+}
+
+variable "github_owner" {
+  type        = string
+  description = "GitHub account or org name (owner of the repository)"
+}
+
+variable "github_repo" {
+  type        = string
+  description = "GitHub repository name — runners register at repo scope"
+}
+
+variable "runner_pat" {
+  type        = string
+  sensitive   = true
+  description = "GitHub classic PAT with repo scope — injected via TF_VAR_runner_pat in CI"
+}
+
+variable "runner_app_pat" {
+  type        = string
+  sensitive   = true
+  description = "GitHub classic PAT with repo scope for the application repo (MyApi) — injected via TF_VAR_runner_app_pat in CI"
+}

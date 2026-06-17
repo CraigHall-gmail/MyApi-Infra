@@ -35,7 +35,26 @@ permissions:
   pull-requests: write
 
 jobs:
+  start-runner:
+    name: Start Staging Runner
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Start ACA runner job
+        run: az containerapp job start --name job-runner-stg --resource-group rg-myapi-staging
+
   deploy:
+    needs: start-runner
     uses: ./.github/workflows/_shared-terraform-planapply.yml
     with:
       environment:               staging
@@ -46,8 +65,13 @@ jobs:
       tf_state_container:        tfstate
       tf_state_key:              staging/api.tfstate
       apply_branch:              main
+      runner:                    '["self-hosted","azure","stg"]'
+      runner_aca_job_name:       job-runner-stg
+      runner_resource_group:     rg-myapi-staging
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       PG_ADMIN_PASSWORD:     ${{ secrets.PG_ADMIN_PASSWORD }}
+      GH_RUNNER_PAT:         ${{ secrets.GH_RUNNER_PAT }}
+      GH_RUNNER_APP_PAT:     ${{ secrets.GH_RUNNER_APP_PAT }}

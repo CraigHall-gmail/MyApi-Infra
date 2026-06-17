@@ -26,3 +26,10 @@ pg_storage_mb            = 65536
 pg_backup_retention_days = 14
 
 github_actions_principal_id = "6eba19ed-4ad3-4380-93ba-e99d0563b1ab"
+
+# VNet — subnets are hardcoded in main.tf; only the top-level CIDR is variable
+vnet_address_space = "10.2.0.0/16"
+
+# GitHub runner — runner_pat and runner_app_pat supplied via TF_VAR_* (GitHub Secrets)
+github_owner = "CraigHall-gmail"
+github_repo  = "MyApi-Infra"

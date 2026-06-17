@@ -55,7 +55,28 @@ permissions:
   pull-requests: write   # post plan output as PR comment
 
 jobs:
+  # KEDA's polling model misses the short "queued" window — start the runner
+  # explicitly so it is warm when the plan job is dispatched.
+  start-runner:
+    name: Start Dev Runner
+    runs-on: ubuntu-latest
+    environment: development
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Start ACA runner job
+        run: az containerapp job start --name job-runner-dev --resource-group rg-myapi-dev
+
   deploy:
+    needs: start-runner
     uses: ./.github/workflows/_shared-terraform-planapply.yml
     with:
       environment:               development
@@ -65,6 +86,9 @@ jobs:
       tf_state_storage_account:  myapiterraformstate
       tf_state_container:        tfstate
       tf_state_key:              development/api.tfstate
+      runner:                    '["self-hosted","azure","dev"]'
+      runner_aca_job_name:       job-runner-dev
+      runner_resource_group:     rg-myapi-dev
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
