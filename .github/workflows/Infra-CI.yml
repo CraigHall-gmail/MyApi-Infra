@@ -235,33 +235,9 @@ jobs:
   # Concurrency groups match Infra-Provision-*.yml to prevent this workflow and
   # a concurrent manual provision run from interleaving on the same state file.
 
-  # Starts the ACA Jobs self-hosted runner for dev before the plan/apply job is
-  # queued. KEDA's github-runner scaler reports MetricValue=0 for multi-job
-  # workflows because the run is already in_progress (ubuntu-latest jobs running)
-  # by the time KEDA polls — it only counts runs in queued state. Explicitly
-  # triggering the ACA Job here is the reliable alternative.
-  start-runner-dev:
-    name: Start Dev Runner
-    needs: [validate, checkov, sonarcloud]
-    runs-on: ubuntu-latest
-    environment: development
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Azure login (OIDC)
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
-        with:
-          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Start ACA runner job
-        run: az containerapp job start --name job-runner-dev --resource-group rg-myapi-dev
-
   plan-apply-development:
     name: Development
-    needs: [validate, checkov, sonarcloud, start-runner-dev]
+    needs: [validate, checkov, sonarcloud]
     permissions:
       id-token: write        # OIDC token for Azure login
       contents: read
@@ -278,9 +254,6 @@ jobs:
       tf_state_container:        tfstate
       tf_state_key:              development/api.tfstate
       apply_branch:              main
-      runner:                    '["self-hosted","azure","dev"]'
-      runner_aca_job_name:       job-runner-dev
-      runner_resource_group:     rg-myapi-dev
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
@@ -353,7 +326,7 @@ jobs:
   # preventing PRs from being permanently blocked by a stale "pending" status.
   ci-status:
     name: CI Status
-    needs: [format-check, validate, checkov, sonarcloud, start-runner-dev, plan-apply-development, plan-apply-staging, plan-apply-production]
+    needs: [format-check, validate, checkov, sonarcloud, plan-apply-development, plan-apply-staging, plan-apply-production]
     if: always()
     runs-on: ubuntu-latest
     steps:
