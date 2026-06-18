@@ -235,9 +235,45 @@ jobs:
   # Concurrency groups match Infra-Provision-*.yml to prevent this workflow and
   # a concurrent manual provision run from interleaving on the same state file.
 
+  setup-dev:
+    name: Check Dev Runner
+    needs: [validate, checkov, sonarcloud]
+    runs-on: ubuntu-latest
+    environment: development
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      runner:              ${{ steps.check.outputs.runner }}
+      runner_aca_job_name: ${{ steps.check.outputs.runner_aca_job_name }}
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check and start ACA runner
+        id: check
+        run: |
+          if az containerapp job show \
+               --name job-runner-dev \
+               --resource-group rg-myapi-dev \
+               --output none 2>/dev/null; then
+            az containerapp job start \
+              --name job-runner-dev \
+              --resource-group rg-myapi-dev
+            echo 'runner=["self-hosted","azure","dev"]' >> "$GITHUB_OUTPUT"
+            echo 'runner_aca_job_name=job-runner-dev'  >> "$GITHUB_OUTPUT"
+          else
+            echo 'runner="ubuntu-latest"'  >> "$GITHUB_OUTPUT"
+            echo 'runner_aca_job_name='    >> "$GITHUB_OUTPUT"
+          fi
+
   plan-apply-development:
     name: Development
-    needs: [validate, checkov, sonarcloud]
+    needs: [validate, checkov, sonarcloud, setup-dev]
     permissions:
       id-token: write        # OIDC token for Azure login
       contents: read
@@ -254,6 +290,9 @@ jobs:
       tf_state_container:        tfstate
       tf_state_key:              development/api.tfstate
       apply_branch:              main
+      runner:                    ${{ needs.setup-dev.outputs.runner }}
+      runner_aca_job_name:       ${{ needs.setup-dev.outputs.runner_aca_job_name }}
+      runner_resource_group:     rg-myapi-dev
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
@@ -262,9 +301,45 @@ jobs:
       GH_RUNNER_PAT:         ${{ secrets.GH_RUNNER_PAT }}
       GH_RUNNER_APP_PAT:     ${{ secrets.GH_RUNNER_APP_PAT }}
 
+  setup-stg:
+    name: Check Staging Runner
+    needs: [validate, checkov, sonarcloud]
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      runner:              ${{ steps.check.outputs.runner }}
+      runner_aca_job_name: ${{ steps.check.outputs.runner_aca_job_name }}
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check and start ACA runner
+        id: check
+        run: |
+          if az containerapp job show \
+               --name job-runner-stg \
+               --resource-group rg-myapi-staging \
+               --output none 2>/dev/null; then
+            az containerapp job start \
+              --name job-runner-stg \
+              --resource-group rg-myapi-staging
+            echo 'runner=["self-hosted","azure","stg"]' >> "$GITHUB_OUTPUT"
+            echo 'runner_aca_job_name=job-runner-stg'  >> "$GITHUB_OUTPUT"
+          else
+            echo 'runner="ubuntu-latest"'  >> "$GITHUB_OUTPUT"
+            echo 'runner_aca_job_name='    >> "$GITHUB_OUTPUT"
+          fi
+
   plan-apply-staging:
     name: Staging
-    needs: [validate, checkov, sonarcloud]
+    needs: [validate, checkov, sonarcloud, setup-stg]
     permissions:
       id-token: write
       contents: read
@@ -281,6 +356,9 @@ jobs:
       tf_state_container:        tfstate
       tf_state_key:              staging/api.tfstate
       apply_branch:              main
+      runner:                    ${{ needs.setup-stg.outputs.runner }}
+      runner_aca_job_name:       ${{ needs.setup-stg.outputs.runner_aca_job_name }}
+      runner_resource_group:     rg-myapi-staging
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
@@ -289,9 +367,45 @@ jobs:
       GH_RUNNER_PAT:         ${{ secrets.GH_RUNNER_PAT }}
       GH_RUNNER_APP_PAT:     ${{ secrets.GH_RUNNER_APP_PAT }}
 
+  setup-prd:
+    name: Check Production Runner
+    needs: [validate, checkov, sonarcloud]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      runner:              ${{ steps.check.outputs.runner }}
+      runner_aca_job_name: ${{ steps.check.outputs.runner_aca_job_name }}
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check and start ACA runner
+        id: check
+        run: |
+          if az containerapp job show \
+               --name job-runner-prd \
+               --resource-group rg-myapi-production \
+               --output none 2>/dev/null; then
+            az containerapp job start \
+              --name job-runner-prd \
+              --resource-group rg-myapi-production
+            echo 'runner=["self-hosted","azure","prd"]' >> "$GITHUB_OUTPUT"
+            echo 'runner_aca_job_name=job-runner-prd'  >> "$GITHUB_OUTPUT"
+          else
+            echo 'runner="ubuntu-latest"'  >> "$GITHUB_OUTPUT"
+            echo 'runner_aca_job_name='    >> "$GITHUB_OUTPUT"
+          fi
+
   plan-apply-production:
     name: Production
-    needs: [validate, checkov, sonarcloud]
+    needs: [validate, checkov, sonarcloud, setup-prd]
     permissions:
       id-token: write
       contents: read
@@ -308,6 +422,9 @@ jobs:
       tf_state_container:        tfstate
       tf_state_key:              production/api.tfstate
       apply_branch:              main
+      runner:                    ${{ needs.setup-prd.outputs.runner }}
+      runner_aca_job_name:       ${{ needs.setup-prd.outputs.runner_aca_job_name }}
+      runner_resource_group:     rg-myapi-production
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
@@ -326,7 +443,7 @@ jobs:
   # preventing PRs from being permanently blocked by a stale "pending" status.
   ci-status:
     name: CI Status
-    needs: [format-check, validate, checkov, sonarcloud, plan-apply-development, plan-apply-staging, plan-apply-production]
+    needs: [format-check, validate, checkov, sonarcloud, setup-dev, setup-stg, setup-prd, plan-apply-development, plan-apply-staging, plan-apply-production]
     if: always()
     runs-on: ubuntu-latest
     steps:
