@@ -150,7 +150,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ inputs.tf_version }}
           # Wrapper requires system node — disabled for self-hosted runner compatibility.
@@ -264,14 +264,16 @@ jobs:
         run: az containerapp job start --name ${{ inputs.runner_aca_job_name }} --resource-group ${{ inputs.runner_resource_group }}
 
   # ── Job 3: Apply ──────────────────────────────────────────────────────────
-  # Runs only on branch push when plan detected changes. Re-plans immediately
-  # before applying to guarantee a fresh state snapshot — eliminates stale-plan
-  # errors that occur when another workflow touches state between plan and apply.
+  # Depends only on plan (not pre-apply-runner) so a skipped pre-apply-runner
+  # (bootstrap: no ACA Job exists yet) never cascades a skip onto apply.
+  # On self-hosted runners apply queues on the runner label; the ACA container
+  # started by pre-apply-runner registers (~90 s) while apply's startup steps
+  # (checkout / login / tf init, ~60-90 s) overlap, so the runner is ready by
+  # the time terraform commands run.
   apply:
     name: Apply (${{ inputs.environment }})
-    needs: [plan, pre-apply-runner]
+    needs: plan
     if: |
-      (needs['pre-apply-runner'].result == 'success' || needs['pre-apply-runner'].result == 'skipped') &&
       (github.ref == format('refs/heads/{0}', inputs.apply_branch) ||
        github.event_name == 'workflow_dispatch') &&
       needs.plan.outputs.plan_exit_code == '2'
@@ -308,7 +310,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ inputs.tf_version }}
           terraform_wrapper: false
