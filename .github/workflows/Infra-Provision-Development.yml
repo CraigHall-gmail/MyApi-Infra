@@ -55,15 +55,19 @@ permissions:
   pull-requests: write   # post plan output as PR comment
 
 jobs:
-  # KEDA's polling model misses the short "queued" window — start the runner
-  # explicitly so it is warm when the plan job is dispatched.
-  start-runner:
-    name: Start Dev Runner
+  # Checks whether the ACA runner job exists yet. On first provision it won't,
+  # so plan/apply fall back to ubuntu-latest. After the first successful apply
+  # the runner exists and subsequent runs use it as a self-hosted runner.
+  setup:
+    name: Check Runner
     runs-on: ubuntu-latest
     environment: development
     permissions:
       id-token: write
       contents: read
+    outputs:
+      runner:              ${{ steps.check.outputs.runner }}
+      runner_aca_job_name: ${{ steps.check.outputs.runner_aca_job_name }}
     steps:
       - name: Azure login (OIDC)
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
@@ -72,11 +76,25 @@ jobs:
           tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Start ACA runner job
-        run: az containerapp job start --name job-runner-dev --resource-group rg-myapi-dev
+      - name: Check and start ACA runner
+        id: check
+        run: |
+          if az containerapp job show \
+               --name job-runner-dev \
+               --resource-group rg-myapi-dev \
+               --output none 2>/dev/null; then
+            az containerapp job start \
+              --name job-runner-dev \
+              --resource-group rg-myapi-dev
+            echo 'runner=["self-hosted","azure","dev"]' >> "$GITHUB_OUTPUT"
+            echo 'runner_aca_job_name=job-runner-dev'  >> "$GITHUB_OUTPUT"
+          else
+            echo 'runner="ubuntu-latest"'  >> "$GITHUB_OUTPUT"
+            echo 'runner_aca_job_name='    >> "$GITHUB_OUTPUT"
+          fi
 
   deploy:
-    needs: start-runner
+    needs: setup
     uses: ./.github/workflows/_shared-terraform-planapply.yml
     with:
       environment:               development
@@ -86,8 +104,8 @@ jobs:
       tf_state_storage_account:  myapiterraformstate
       tf_state_container:        tfstate
       tf_state_key:              development/api.tfstate
-      runner:                    '["self-hosted","azure","dev"]'
-      runner_aca_job_name:       job-runner-dev
+      runner:                    ${{ needs.setup.outputs.runner }}
+      runner_aca_job_name:       ${{ needs.setup.outputs.runner_aca_job_name }}
       runner_resource_group:     rg-myapi-dev
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}

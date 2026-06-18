@@ -289,28 +289,9 @@ jobs:
       GH_RUNNER_PAT:         ${{ secrets.GH_RUNNER_PAT }}
       GH_RUNNER_APP_PAT:     ${{ secrets.GH_RUNNER_APP_PAT }}
 
-  start-runner-stg:
-    name: Start Staging Runner
-    needs: [validate, checkov, sonarcloud]
-    runs-on: ubuntu-latest
-    environment: staging
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Azure login (OIDC)
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
-        with:
-          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Start ACA runner job
-        run: az containerapp job start --name job-runner-stg --resource-group rg-myapi-staging
-
   plan-apply-staging:
     name: Staging
-    needs: [validate, checkov, sonarcloud, start-runner-stg]
+    needs: [validate, checkov, sonarcloud]
     permissions:
       id-token: write
       contents: read
@@ -327,9 +308,6 @@ jobs:
       tf_state_container:        tfstate
       tf_state_key:              staging/api.tfstate
       apply_branch:              main
-      runner:                    '["self-hosted","azure","stg"]'
-      runner_aca_job_name:       job-runner-stg
-      runner_resource_group:     rg-myapi-staging
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
@@ -338,28 +316,9 @@ jobs:
       GH_RUNNER_PAT:         ${{ secrets.GH_RUNNER_PAT }}
       GH_RUNNER_APP_PAT:     ${{ secrets.GH_RUNNER_APP_PAT }}
 
-  start-runner-prd:
-    name: Start Production Runner
-    needs: [validate, checkov, sonarcloud]
-    runs-on: ubuntu-latest
-    environment: production
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Azure login (OIDC)
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
-        with:
-          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Start ACA runner job
-        run: az containerapp job start --name job-runner-prd --resource-group rg-myapi-production
-
   plan-apply-production:
     name: Production
-    needs: [validate, checkov, sonarcloud, start-runner-prd]
+    needs: [validate, checkov, sonarcloud]
     permissions:
       id-token: write
       contents: read
@@ -376,9 +335,6 @@ jobs:
       tf_state_container:        tfstate
       tf_state_key:              production/api.tfstate
       apply_branch:              main
-      runner:                    '["self-hosted","azure","prd"]'
-      runner_aca_job_name:       job-runner-prd
-      runner_resource_group:     rg-myapi-production
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
@@ -397,7 +353,7 @@ jobs:
   # preventing PRs from being permanently blocked by a stale "pending" status.
   ci-status:
     name: CI Status
-    needs: [format-check, validate, checkov, sonarcloud, start-runner-dev, start-runner-stg, start-runner-prd, plan-apply-development, plan-apply-staging, plan-apply-production]
+    needs: [format-check, validate, checkov, sonarcloud, start-runner-dev, plan-apply-development, plan-apply-staging, plan-apply-production]
     if: always()
     runs-on: ubuntu-latest
     steps:
