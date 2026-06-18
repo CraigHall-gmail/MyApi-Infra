@@ -157,6 +157,18 @@ jobs:
           # Exit code and stdout are captured manually in the Plan step below.
           terraform_wrapper: false
 
+      # Safe because the caller's concurrency group (cancel-in-progress: false)
+      # serialises runs per environment — any lock present when this job starts
+      # belongs to a dead runner and is guaranteed stale.
+      - name: Break stale state lock
+        run: |
+          az storage blob lease break \
+            --account-name "$TF_STATE_STORAGE_ACCOUNT" \
+            --container-name "$TF_STATE_CONTAINER" \
+            --blob-name "$TF_STATE_KEY" \
+            --auth-mode login \
+            2>/dev/null || true
+
       - name: Terraform Init
         run: |
           terraform init \
@@ -299,6 +311,15 @@ jobs:
         with:
           terraform_version: ${{ inputs.tf_version }}
           terraform_wrapper: false
+
+      - name: Break stale state lock
+        run: |
+          az storage blob lease break \
+            --account-name "$TF_STATE_STORAGE_ACCOUNT" \
+            --container-name "$TF_STATE_CONTAINER" \
+            --blob-name "$TF_STATE_KEY" \
+            --auth-mode login \
+            2>/dev/null || true
 
       - name: Terraform Init
         run: |
