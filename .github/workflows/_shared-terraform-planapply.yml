@@ -271,6 +271,7 @@ jobs:
     name: Apply (${{ inputs.environment }})
     needs: [plan, pre-apply-runner]
     if: |
+      (needs['pre-apply-runner'].result == 'success' || needs['pre-apply-runner'].result == 'skipped') &&
       (github.ref == format('refs/heads/{0}', inputs.apply_branch) ||
        github.event_name == 'workflow_dispatch') &&
       needs.plan.outputs.plan_exit_code == '2'
