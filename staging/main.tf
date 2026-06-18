@@ -156,6 +156,7 @@ module "key_vault" {
   resource_group_name        = module.environment.resource_group_name
   location                   = module.environment.location
   secret_value               = module.postgres.connection_string
+  enable_private_endpoint    = true
   private_endpoint_subnet_id = module.vnet.private_endpoints_subnet_id
   private_dns_zone_id        = azurerm_private_dns_zone.key_vault.id
   tags                       = var.tags

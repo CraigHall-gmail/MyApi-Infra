@@ -19,7 +19,7 @@ resource "azurerm_key_vault" "this" {
 }
 
 resource "azurerm_private_endpoint" "this" {
-  count               = var.private_endpoint_subnet_id != null ? 1 : 0
+  count               = var.enable_private_endpoint ? 1 : 0
   name                = "pe-${var.key_vault_name}"
   resource_group_name = var.resource_group_name
   location            = var.location

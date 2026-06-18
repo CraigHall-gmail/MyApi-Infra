@@ -31,9 +31,15 @@ variable "secret_expiry_duration" {
   default     = "8760h"
 }
 
+variable "enable_private_endpoint" {
+  type        = bool
+  description = "Create a private endpoint for this Key Vault. When true, private_endpoint_subnet_id and private_dns_zone_id must be provided."
+  default     = false
+}
+
 variable "private_endpoint_subnet_id" {
   type        = string
-  description = "Subnet ID for the Key Vault private endpoint NIC. Null = no private endpoint (public access via network ACL bypass)."
+  description = "Subnet ID for the Key Vault private endpoint NIC. Required when enable_private_endpoint is true."
   default     = null
 }
 
