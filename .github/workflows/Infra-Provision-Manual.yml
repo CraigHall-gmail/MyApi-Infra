@@ -8,16 +8,17 @@
 #
 #   Auto-triggered provisioning (push/PR path changes) is handled by the
 #   environment-specific workflows:
-#     Infra-Provision-Development.yml  →  push/PR on development branch
-#     Infra-Provision-Staging.yml      →  push/PR on main branch
-#     Infra-Provision-Production.yml   →  push/PR on main branch
+#     Infra-Provision-Development.yml  →  workflow_dispatch for development
+#     Infra-Provision-Staging.yml      →  workflow_dispatch for staging
+#     Infra-Provision-Production.yml   →  workflow_dispatch for production
 #
 # Inputs:
 #   environment  – development | staging | production
 #   destroy      – set true to run terraform destroy (irreversible — use carefully)
 #
 # Required secrets (per GitHub Environment):
-#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#   PG_ADMIN_PASSWORD, GH_RUNNER_PAT, GH_RUNNER_APP_PAT
 # ══════════════════════════════════════════════════════════════════════════════
 
 name: Infra - Provision - Manual
@@ -50,36 +51,90 @@ permissions:
   pull-requests: write
 
 jobs:
-  # Resolves environment-specific Terraform config from the selected input.
+  # Resolves environment-specific Terraform config and runner details from the
+  # selected input. No Azure credentials required — pure config mapping.
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      working_directory: ${{ steps.config.outputs.working_directory }}
-      tfstate_key:       ${{ steps.config.outputs.tfstate_key }}
-      apply_branch:      ${{ steps.config.outputs.apply_branch }}
+      working_directory:    ${{ steps.config.outputs.working_directory }}
+      tfstate_key:          ${{ steps.config.outputs.tfstate_key }}
+      apply_branch:         ${{ steps.config.outputs.apply_branch }}
+      runner_job_name:      ${{ steps.config.outputs.runner_job_name }}
+      runner_resource_group: ${{ steps.config.outputs.runner_resource_group }}
     steps:
       - id: config
         run: |
           case "${{ inputs.environment }}" in
             development)
-              echo "working_directory=development"            >> $GITHUB_OUTPUT
-              echo "tfstate_key=development/api.tfstate"    >> $GITHUB_OUTPUT
-              echo "apply_branch=development"               >> $GITHUB_OUTPUT
+              echo "working_directory=development"              >> $GITHUB_OUTPUT
+              echo "tfstate_key=development/api.tfstate"        >> $GITHUB_OUTPUT
+              echo "apply_branch=main"                          >> $GITHUB_OUTPUT
+              echo "runner_job_name=job-runner-dev"             >> $GITHUB_OUTPUT
+              echo "runner_resource_group=rg-myapi-dev"         >> $GITHUB_OUTPUT
               ;;
             staging)
-              echo "working_directory=staging"              >> $GITHUB_OUTPUT
-              echo "tfstate_key=staging/api.tfstate"        >> $GITHUB_OUTPUT
-              echo "apply_branch=main"                      >> $GITHUB_OUTPUT
+              echo "working_directory=staging"                  >> $GITHUB_OUTPUT
+              echo "tfstate_key=staging/api.tfstate"            >> $GITHUB_OUTPUT
+              echo "apply_branch=main"                          >> $GITHUB_OUTPUT
+              echo "runner_job_name=job-runner-stg"             >> $GITHUB_OUTPUT
+              echo "runner_resource_group=rg-myapi-staging"     >> $GITHUB_OUTPUT
               ;;
             production)
-              echo "working_directory=production"           >> $GITHUB_OUTPUT
-              echo "tfstate_key=production/api.tfstate"     >> $GITHUB_OUTPUT
-              echo "apply_branch=main"                      >> $GITHUB_OUTPUT
+              echo "working_directory=production"               >> $GITHUB_OUTPUT
+              echo "tfstate_key=production/api.tfstate"         >> $GITHUB_OUTPUT
+              echo "apply_branch=main"                          >> $GITHUB_OUTPUT
+              echo "runner_job_name=job-runner-prd"             >> $GITHUB_OUTPUT
+              echo "runner_resource_group=rg-myapi-production"  >> $GITHUB_OUTPUT
               ;;
           esac
 
-  provision:
+  # Checks whether the ACA runner job exists for the selected environment and
+  # starts it if so. Falls back to ubuntu-latest when not provisioned yet
+  # (e.g. first-time bootstrap). Uses environment: ${{ inputs.environment }}
+  # so OIDC federation matches the correct GitHub Environment credentials.
+  setup:
+    name: Check Runner
     needs: prepare
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      runner:              ${{ steps.check.outputs.runner }}
+      runner_aca_job_name: ${{ steps.check.outputs.runner_aca_job_name }}
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check and start ACA runner
+        id: check
+        run: |
+          JOB_NAME="${{ needs.prepare.outputs.runner_job_name }}"
+          RG="${{ needs.prepare.outputs.runner_resource_group }}"
+          if az containerapp job show \
+               --name "$JOB_NAME" \
+               --resource-group "$RG" \
+               --output none 2>/dev/null; then
+            az containerapp job start --name "$JOB_NAME" --resource-group "$RG"
+            case "${{ inputs.environment }}" in
+              development) LABEL="dev" ;;
+              staging)     LABEL="stg" ;;
+              production)  LABEL="prd" ;;
+            esac
+            echo "runner=[\"self-hosted\",\"azure\",\"$LABEL\"]" >> "$GITHUB_OUTPUT"
+            echo "runner_aca_job_name=$JOB_NAME"                 >> "$GITHUB_OUTPUT"
+          else
+            echo 'runner="ubuntu-latest"' >> "$GITHUB_OUTPUT"
+            echo 'runner_aca_job_name='   >> "$GITHUB_OUTPUT"
+          fi
+
+  provision:
+    needs: [prepare, setup]
     uses: ./.github/workflows/_shared-terraform-planapply.yml
     with:
       environment:              ${{ inputs.environment }}
@@ -90,8 +145,13 @@ jobs:
       tf_state_container:       tfstate
       tf_state_key:             ${{ needs.prepare.outputs.tfstate_key }}
       apply_branch:             ${{ needs.prepare.outputs.apply_branch }}
+      runner:                   ${{ needs.setup.outputs.runner }}
+      runner_aca_job_name:      ${{ needs.setup.outputs.runner_aca_job_name }}
+      runner_resource_group:    ${{ needs.prepare.outputs.runner_resource_group }}
     secrets:
       AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       PG_ADMIN_PASSWORD:     ${{ secrets.PG_ADMIN_PASSWORD }}
+      GH_RUNNER_PAT:         ${{ secrets.GH_RUNNER_PAT }}
+      GH_RUNNER_APP_PAT:     ${{ secrets.GH_RUNNER_APP_PAT }}

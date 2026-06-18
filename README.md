@@ -5,33 +5,47 @@ Terraform-managed Azure infrastructure for the MyApi application. Deploys three 
 ## Architecture
 
 ```
-                        ┌─────────────────────────────────┐
-                        │        Azure Container Apps       │
-                        │  ┌──────────────────────────┐   │
-                        │  │  myapi container app      │   │
-                        │  │  (User-assigned identity) │   │
-                        │  └────────────┬─────────────┘   │
-                        │               │ AcrPull           │
-                        └───────────────┼─────────────────┘
-                                        │
-              ┌─────────────────────────┼─────────────────────────┐
-              │                         │                           │
-    ┌─────────▼──────┐       ┌──────────▼────────┐    ┌──────────▼────────┐
-    │  Azure          │       │  Key Vault         │    │  PostgreSQL        │
-    │  Container      │       │  (db-connection-   │    │  Flexible Server   │
-    │  Registry       │       │   string secret)   │    │  (v16)             │
-    │  (shared)       │       └────────────────────┘    └────────────────────┘
-    └─────────────────┘
+  ┌─────────────────────────────────── Virtual Network ──────────────────────────────────┐
+  │                                                                                        │
+  │  snet-aca (delegated: Microsoft.App/environments)                                      │
+  │  ┌──────────────────────────────────────────────────────────────────────────────┐     │
+  │  │  ACA Environment                                                              │     │
+  │  │  ┌────────────────────────────┐   ┌──────────────────────────────────────┐   │     │
+  │  │  │  myapi container app       │   │  ACA Jobs (self-hosted runners)      │   │     │
+  │  │  │  (User-assigned identity)  │   │  job-runner-dev  (infra CI)          │   │     │
+  │  │  └───────────┬────────────────┘   │  job-runner-app-dev  (app CD)        │   │     │
+  │  │              │ AcrPull            └──────────────────────────────────────┘   │     │
+  │  └──────────────┼───────────────────────────────────────────────────────────────┘     │
+  │                 │                                                                       │
+  │  snet-postgres (delegated: Microsoft.DBforPostgreSQL/flexibleServers)                  │
+  │  ┌──────────────┼──────────────────────────────────────────────────────────────┐     │
+  │  │  PostgreSQL Flexible Server v16  ◄────────────────────────────────────────  │     │
+  │  └──────────────┼──────────────────────────────────────────────────────────────┘     │
+  │                 │                                                                       │
+  │  snet-private-endpoints                                                                 │
+  │  ┌──────────────┼──────────────────────────────────────────────────────────────┐     │
+  │  │  Key Vault private endpoint  ◄────────────────────────────────────────────  │     │
+  │  └──────────────┼──────────────────────────────────────────────────────────────┘     │
+  └─────────────────┼──────────────────────────────────────────────────────────────────────┘
+                    │
+    ┌───────────────▼──────────┐
+    │  Azure Container Registry │
+    │  (shared, external)       │
+    └──────────────────────────┘
 ```
 
-Each environment is a self-contained Terraform root that composes four shared modules:
+Private DNS zones (`*.private.postgres.database.azure.com`, `privatelink.vaultcore.azure.net`) are linked to the VNet so the ACA environment resolves PostgreSQL and Key Vault via their private endpoints.
+
+Each environment is a self-contained Terraform root that composes six shared modules:
 
 | Module | Resources |
 |---|---|
-| `app-environment` | Resource group, Log Analytics workspace, ACA environment |
+| `vnet` | Virtual Network, four subnets (ACA, PostgreSQL, private endpoints, runner), NSGs |
+| `app-environment` | Resource group, Log Analytics workspace, ACA environment (VNet-injected) |
 | `container-app` | User-assigned identity, AcrPull role assignment, Container App |
-| `postgres` | PostgreSQL Flexible Server v16, firewall rule, database |
-| `key-vault` | Key Vault, Secrets Officer role assignment, connection string secret |
+| `postgres` | PostgreSQL Flexible Server v16, VNet-delegated subnet, private DNS zone link |
+| `key-vault` | Key Vault, private endpoint, Secrets Officer role assignment, connection string secret |
+| `runner` | ACA Jobs self-hosted runner with KEDA GitHub-runner scaler (one instance per runner PAT) |
 
 ## Environment Comparison
 
@@ -45,6 +59,10 @@ Each environment is a self-contained Terraform root that composes four shared mo
 | Geo-redundant backup | No | No | Yes |
 | Backup retention | 7 days | 7 days | 14 days |
 | ASPNETCORE_ENVIRONMENT | Development | Staging | Production |
+| VNet injection | Yes | No | No |
+| PostgreSQL access | VNet delegation (private) | Public (firewall) | Public (firewall) |
+| Key Vault access | Private endpoint | Public (firewall) | Public (firewall) |
+| Self-hosted runner | Yes (`job-runner-dev`, `job-runner-app-dev`) | No (ubuntu-latest) | No (ubuntu-latest) |
 
 All three environments deploy to `southafricanorth`.
 
@@ -64,7 +82,9 @@ MyApi-Infra/
 │   ├── app-environment/
 │   ├── container-app/
 │   ├── key-vault/
-│   └── postgres/
+│   ├── postgres/
+│   ├── runner/                        # ACA Jobs self-hosted runner (KEDA github-runner scaler)
+│   └── vnet/                          # Virtual Network, subnets, NSGs
 ├── development/
 ├── staging/
 ├── production/
@@ -84,9 +104,9 @@ format-check ──┬── validate (dev/stg/prd matrix)
                ├── checkov
                └── sonarcloud
                        │
-               plan-apply-development
-               plan-apply-staging
-               plan-apply-production ← requires manual approval (production environment)
+               setup-dev ──▶ plan-apply-development
+               setup-stg ──▶ plan-apply-staging
+               setup-prd ──▶ plan-apply-production ← requires manual approval
                        │
                ci-status  ← single required branch protection check
 ```
@@ -94,6 +114,8 @@ format-check ──┬── validate (dev/stg/prd matrix)
 **On pull requests**: runs format, validate, scan, and plan. Plan output is posted as a PR comment. Apply is skipped.
 
 **On push to main**: same steps, then applies for each environment where the plan detected changes (exit code 2). Production requires a required reviewer approval via GitHub Environments.
+
+**Runner setup jobs** (`setup-dev`, `setup-stg`, `setup-prd`): before each plan/apply job, a setup job checks whether the environment's ACA Jobs runner exists and starts it. Outputs the runner label (`["self-hosted","azure","dev"]`) or falls back to `"ubuntu-latest"` if no ACA runner is provisioned yet.
 
 **Concurrency**: PR runs cancel in-progress on new commits; push-to-main runs queue to prevent concurrent state modifications.
 
@@ -117,19 +139,25 @@ All manual workflows share the same concurrency groups as CI to prevent state co
 
 The plan/apply logic lives in one reusable workflow called by all callers.
 
-**Plan job** (always runs):
-1. Azure login via OIDC
-2. `terraform init` against Azure Blob remote state
-3. `terraform fmt -check`, `terraform validate`
-4. `terraform plan -detailed-exitcode`
-5. Posts plan to PR comment (capped at 60k characters)
+**Plan job** (always runs, on self-hosted runner if one was resolved by the setup job):
+1. Break stale state lock (safe because the caller's concurrency group serialises runs)
+2. Azure login via OIDC
+3. `terraform init` against Azure Blob remote state
+4. `terraform fmt -check`, `terraform validate`
+5. `terraform plan -detailed-exitcode` (exit code captured manually; `terraform_wrapper` disabled for self-hosted runner compatibility)
+6. Posts plan to PR comment (capped at 60k characters)
+
+**Pre-start runner job** (conditional, runs between plan and apply):
+- Skipped when `runner_aca_job_name` is empty (GitHub-hosted environments).
+- Explicitly starts the ACA Job container so it can register before apply queues. Required because KEDA's GitHub-runner scaler polls for `queued` workflow runs every 20 s, but by the time the plan job completes the run is already `in_progress` — KEDA sees no queued jobs and never scales up. Starting the container here bridges that timing gap.
+- The `apply` job depends only on `plan` (not on `pre-apply-runner`) so a skipped pre-start during bootstrap never cascades a skip onto apply.
 
 **Apply job** (conditional):
 - Runs only when: branch matches `apply_branch` (or `workflow_dispatch`) **and** plan exit code is `2` (changes detected).
 - Re-plans before applying to guarantee a fresh state snapshot.
 - `terraform apply -auto-approve`
 
-`PG_ADMIN_PASSWORD` is injected as `TF_VAR_pg_admin_password` so it never appears in plan output.
+`PG_ADMIN_PASSWORD` is injected as `TF_VAR_pg_admin_password`. `GH_RUNNER_PAT` and `GH_RUNNER_APP_PAT` are injected as Terraform variables for runner module provisioning.
 
 ## Authentication
 
@@ -162,17 +190,16 @@ The CD pipeline (not this repo) assigns this identity to the deployed container 
 
 Runs static IaC analysis against CIS Azure benchmarks (1000+ policies). SARIF results are uploaded to the GitHub Security tab as code-scanning alerts.
 
-Active global suppressions (all pending VNet + private endpoint hardening):
+Active global suppressions (in `.checkov.yaml`; all relate to network isolation not yet provisioned for staging and production):
 
 | Check | Resource | Reason |
 |---|---|---|
-| CKV_AZURE_183 / CKV_AZURE_109 | Key Vault | Network ACL default-deny requires private endpoint |
-| CKV2_AZURE_5 / CKV2_AZURE_32 | Key Vault | Private endpoint not yet provisioned |
-| CKV2_AZURE_57 | PostgreSQL | Private endpoint not yet provisioned |
-| CKV2_AZURE_26 | PostgreSQL | `0.0.0.0/0.0.0.0` is Azure's allow-Azure-services sentinel — removed with VNet |
-| CKV_AZURE_130 / CKV_AZURE_131 | PostgreSQL | Same private endpoint roadmap item |
+| CKV_AZURE_183 / CKV_AZURE_109 | Key Vault | Network ACL default-deny — suppressed globally because inline `checkov:skip` is not applied when the check runs from a calling module context |
+| CKV2_AZURE_5 / CKV2_AZURE_32 | Key Vault | Private endpoint not yet provisioned for staging/production |
+| CKV2_AZURE_57 | PostgreSQL | Private endpoint check — staging/production still use public access with firewall |
+| CKV2_AZURE_26 | PostgreSQL | `0.0.0.0/0.0.0.0` allow-Azure-services sentinel — staging/production only; removed from development by VNet delegation |
 
-When a VNet module with private endpoints is added, all suppressions can be removed.
+Development already satisfies these checks at the infrastructure level (VNet-delegated PostgreSQL, Key Vault private endpoint). When staging and production are migrated to the same VNet topology, all suppressions can be removed.
 
 ### SonarCloud
 
@@ -193,6 +220,10 @@ Container App:           myapi-dev / myapi-stg / myapi
 PostgreSQL server:       psql-myapi-dev / psql-myapi-stg / psql-myapi-prd
 Key Vault:               kv-myapi-dev / kv-myapi-stg / kv-myapi-prd
 Managed identity:        id-myapi-dev / id-myapi-stg / id-myapi
+Virtual Network:         vnet-myapi-dev / vnet-myapi-stg / vnet-myapi-prd
+NSGs:                    nsg-aca-myapi-dev / nsg-postgres-myapi-dev / nsg-pe-myapi-dev / nsg-runner-myapi-dev
+ACA Jobs (infra runner): job-runner-dev / job-runner-stg / job-runner-prd
+ACA Jobs (app runner):   job-runner-app-dev / job-runner-app-stg / job-runner-app-prd
 ```
 
 ## Required GitHub Secrets
@@ -204,6 +235,8 @@ Managed identity:        id-myapi-dev / id-myapi-stg / id-myapi
 | `AZURE_SUBSCRIPTION_ID` | Repository | Target subscription ID |
 | `PG_ADMIN_PASSWORD` | Repository | PostgreSQL administrator password |
 | `SONAR_TOKEN_INFRA` | Repository | SonarCloud authentication token |
+| `GH_RUNNER_PAT` | Repository | GitHub classic PAT with `repo` scope — used by the `runner` module to register the infra self-hosted runner and by KEDA to poll for queued workflow jobs |
+| `GH_RUNNER_APP_PAT` | Repository | GitHub classic PAT with `repo` scope for the MyApi application repository — used by the `runner_app` module to register the app CD runner |
 
 ## One-Time Setup
 
@@ -212,6 +245,7 @@ Managed identity:        id-myapi-dev / id-myapi-stg / id-myapi
 3. **GitHub Environments** — create `development`, `staging`, and `production` environments in repository Settings. Add required reviewers to `production`.
 4. **Branch protection** — in Settings → Branches → `main` → Require status checks, add `CI Status` as a required check.
 5. **SonarCloud** — create a project at sonarcloud.io, link the repository, set the main branch to `main`, and add `SONAR_TOKEN_INFRA` as a repository secret.
+6. **Runner PATs** — create two GitHub classic PATs with `repo` scope and add them as repository secrets (`GH_RUNNER_PAT` for the infra runner, `GH_RUNNER_APP_PAT` for the app CD runner). The runner module provisions the ACA Jobs container; the PAT is stored as an ACA secret and passed to the KEDA scaler and runner registration at runtime.
 
 ## CD Pipeline Integration
 
