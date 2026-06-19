@@ -20,9 +20,15 @@
 #
 # This workflow is plan-only — it never applies changes.
 #
+# Runner strategy:
+#   Each environment has a setup job that checks whether an ACA Jobs self-hosted
+#   runner exists and starts it if so. The drift job then runs on that runner so
+#   it can reach private Key Vault data plane endpoints inside the VNet. Environments
+#   without a provisioned runner fall back to ubuntu-latest automatically.
+#
 # GitHub Environments:
-#   development     → matrix entry: development
-#   environments-drift → matrix entries: staging, production
+#   development      → setup-dev, drift-development
+#   environments-drift → setup-stg, setup-prd, drift-staging, drift-production
 #
 # Required secrets (per GitHub Environment):
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
@@ -42,35 +48,122 @@ permissions:
   issues: write
 
 jobs:
-  drift-check:
-    name: Drift Check (${{ matrix.env_name }})
+  # ── Setup: check/start ACA runner per environment ─────────────────────────
+  # Mirrors the setup-* jobs in Infra-CI.yml. Falls back to ubuntu-latest when
+  # no ACA runner is provisioned yet for that environment.
+
+  setup-dev:
+    name: Check Dev Runner
     runs-on: ubuntu-latest
-    environment: ${{ matrix.gh_environment }}
+    environment: development
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      runner: ${{ steps.check.outputs.runner }}
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check and start ACA runner
+        id: check
+        run: |
+          if az containerapp job show \
+               --name job-runner-dev \
+               --resource-group rg-myapi-dev \
+               --output none 2>/dev/null; then
+            az containerapp job start \
+              --name job-runner-dev \
+              --resource-group rg-myapi-dev
+            echo 'runner=["self-hosted","azure","dev"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'runner="ubuntu-latest"' >> "$GITHUB_OUTPUT"
+          fi
+
+  setup-stg:
+    name: Check Staging Runner
+    runs-on: ubuntu-latest
+    environment: environments-drift
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      runner: ${{ steps.check.outputs.runner }}
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check and start ACA runner
+        id: check
+        run: |
+          if az containerapp job show \
+               --name job-runner-stg \
+               --resource-group rg-myapi-staging \
+               --output none 2>/dev/null; then
+            az containerapp job start \
+              --name job-runner-stg \
+              --resource-group rg-myapi-staging
+            echo 'runner=["self-hosted","azure","stg"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'runner="ubuntu-latest"' >> "$GITHUB_OUTPUT"
+          fi
+
+  setup-prd:
+    name: Check Production Runner
+    runs-on: ubuntu-latest
+    environment: environments-drift
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      runner: ${{ steps.check.outputs.runner }}
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check and start ACA runner
+        id: check
+        run: |
+          if az containerapp job show \
+               --name job-runner-prd \
+               --resource-group rg-myapi-production \
+               --output none 2>/dev/null; then
+            az containerapp job start \
+              --name job-runner-prd \
+              --resource-group rg-myapi-production
+            echo 'runner=["self-hosted","azure","prd"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'runner="ubuntu-latest"' >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Drift checks ───────────────────────────────────────────────────────────
+  # Each job runs on the runner resolved by its setup job. When the self-hosted
+  # runner is used, it executes inside the VNet and can reach the Key Vault
+  # data plane. terraform_wrapper remains enabled so steps.plan.outputs.exitcode
+  # and steps.plan.outputs.stdout are available for the issue management script.
+
+  drift-development:
+    name: Drift Check (development)
+    needs: setup-dev
+    runs-on: ${{ fromJSON(needs.setup-dev.outputs.runner) }}
+    environment: development
     concurrency:
-      group: drift-check-${{ matrix.env_name }}
+      group: drift-check-development
       cancel-in-progress: true
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - env_name:       development
-            gh_environment: development
-            infra_dir:      development
-            tfstate_key:    development/api.tfstate
-          - env_name:       staging
-            gh_environment: environments-drift
-            infra_dir:      staging
-            tfstate_key:    staging/api.tfstate
-          - env_name:       production
-            gh_environment: environments-drift
-            infra_dir:      production
-            tfstate_key:    production/api.tfstate
-
-    defaults:
-      run:
-        working-directory: ${{ matrix.infra_dir }}
-
     env:
+      DRIFT_ENV: development
       ARM_CLIENT_ID:              ${{ secrets.AZURE_CLIENT_ID }}
       ARM_TENANT_ID:              ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID:        ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -78,10 +171,11 @@ jobs:
       TF_VAR_pg_admin_password:   ${{ secrets.PG_ADMIN_PASSWORD }}
       TF_VAR_runner_pat:          ${{ secrets.GH_RUNNER_PAT }}
       TF_VAR_runner_app_pat:      ${{ secrets.GH_RUNNER_APP_PAT }}
-
+    defaults:
+      run:
+        working-directory: development
     steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Azure login (OIDC)
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
@@ -94,19 +188,15 @@ jobs:
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: "1.8.0"
-          # terraform_wrapper remains enabled (default) so that steps.plan.outputs.exitcode
-          # and steps.plan.outputs.stdout are populated for the drift issue script below.
 
       - name: Terraform Init
         run: |
           terraform init \
             -backend-config="storage_account_name=myapiterraformstate" \
             -backend-config="container_name=tfstate" \
-            -backend-config="key=${{ matrix.tfstate_key }}" \
+            -backend-config="key=development/api.tfstate" \
             -backend-config="use_oidc=true"
 
-      # -detailed-exitcode: 0 = no changes, 1 = error, 2 = drift detected.
-      # continue-on-error so the alert step always runs regardless of exit code.
       - name: Terraform Plan (drift detection)
         id: plan
         run: |
@@ -116,138 +206,376 @@ jobs:
             -lock-timeout=2m
         continue-on-error: true
 
-      # Creates, updates, or closes a GitHub Issue depending on the plan result.
-      # Uses a per-environment label so issues are tracked independently.
       - name: Manage drift issue
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
+          PLAN_STDOUT:   ${{ steps.plan.outputs.stdout }}
+          RUN_URL:       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DRIFT_ENV:     development
         with:
           script: |
-            const ENV      = '${{ matrix.env_name }}';
+            const ENV      = process.env.DRIFT_ENV;
             const LABEL    = `infrastructure-drift-${ENV}`;
-            const exitcode = '${{ steps.plan.outputs.exitcode }}';
-            const runUrl   = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+            const exitcode = process.env.PLAN_EXITCODE;
+            const runUrl   = process.env.RUN_URL;
             const now      = new Date().toISOString();
 
-            // Ensure the label exists — safe to call if it already does.
             try {
               await github.rest.issues.createLabel({
-                owner: context.repo.owner,
-                repo:  context.repo.repo,
-                name:  LABEL,
-                color: 'd93f0b',
+                owner: context.repo.owner, repo: context.repo.repo,
+                name: LABEL, color: 'd93f0b',
                 description: `Azure ${ENV} infrastructure has drifted from Terraform state`
               });
             } catch (_) {}
 
-            // Find any open drift issues from previous runs for this environment.
             const { data: openIssues } = await github.rest.issues.listForRepo({
-              owner:  context.repo.owner,
-              repo:   context.repo.repo,
-              labels: LABEL,
-              state:  'open'
+              owner: context.repo.owner, repo: context.repo.repo,
+              labels: LABEL, state: 'open'
             });
 
             const MAX = 60000;
-            let planOut = `${{ steps.plan.outputs.stdout }}`;
-            if (planOut.length > MAX) {
-              planOut = planOut.slice(0, MAX) + '\n\n…output truncated — see full run logs';
-            }
+            let planOut = process.env.PLAN_STDOUT || '';
+            if (planOut.length > MAX) planOut = planOut.slice(0, MAX) + '\n\n…output truncated — see full run logs';
 
             if (exitcode === '2') {
-              // ── Drift detected ────────────────────────────────────────────
               const body = [
-                `### ⚠️ Infrastructure Drift Detected — \`${ENV}\``,
-                ``,
+                `### ⚠️ Infrastructure Drift Detected — \`${ENV}\``, ``,
                 `Terraform found changes between the state file and the actual Azure infrastructure.`,
-                `Investigate whether these were intentional and either apply or revert them.`,
-                ``,
-                `**Workflow run:** ${runUrl}`,
-                `**Detected at:** ${now}`,
-                ``,
-                `\`\`\``,
-                planOut,
-                `\`\`\``
+                `Investigate whether these were intentional and either apply or revert them.`, ``,
+                `**Workflow run:** ${runUrl}`, `**Detected at:** ${now}`, ``,
+                `\`\`\``, planOut, `\`\`\``
               ].join('\n');
-
               if (openIssues.length > 0) {
-                // Drift is ongoing — add a comment to the existing issue.
                 await github.rest.issues.createComment({
-                  owner:        context.repo.owner,
-                  repo:         context.repo.repo,
+                  owner: context.repo.owner, repo: context.repo.repo,
                   issue_number: openIssues[0].number,
-                  body: [
-                    `### Drift still present — ${now}`,
-                    ``,
-                    `**Workflow run:** ${runUrl}`,
-                    ``,
-                    `\`\`\``,
-                    planOut,
-                    `\`\`\``
-                  ].join('\n')
+                  body: [`### Drift still present — ${now}`, ``, `**Workflow run:** ${runUrl}`, ``, `\`\`\``, planOut, `\`\`\``].join('\n')
                 });
                 console.log(`Updated existing drift issue #${openIssues[0].number}`);
               } else {
-                // First detection — open a new issue.
                 const { data: issue } = await github.rest.issues.create({
-                  owner:  context.repo.owner,
-                  repo:   context.repo.repo,
-                  title:  `⚠️ Infrastructure Drift Detected — ${ENV}`,
-                  body:   body,
-                  labels: [LABEL]
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  title: `⚠️ Infrastructure Drift Detected — ${ENV}`, body, labels: [LABEL]
                 });
                 console.log(`Opened drift issue #${issue.number}`);
               }
-
             } else if (exitcode === '1') {
-              // ── Plan error ────────────────────────────────────────────────
               const body = [
-                `### 🔴 Terraform Plan Error — \`${ENV}\``,
-                ``,
-                `The nightly drift check failed to produce a plan. Manual investigation required.`,
-                ``,
-                `**Workflow run:** ${runUrl}`,
-                `**Occurred at:** ${now}`,
-                ``,
-                `\`\`\``,
-                planOut || '(no output captured — check the workflow logs)',
-                `\`\`\``
+                `### 🔴 Terraform Plan Error — \`${ENV}\``, ``,
+                `The nightly drift check failed to produce a plan. Manual investigation required.`, ``,
+                `**Workflow run:** ${runUrl}`, `**Occurred at:** ${now}`, ``,
+                `\`\`\``, planOut || '(no output captured — check the workflow logs)', `\`\`\``
               ].join('\n');
-
               if (openIssues.length > 0) {
                 await github.rest.issues.createComment({
-                  owner:        context.repo.owner,
-                  repo:         context.repo.repo,
+                  owner: context.repo.owner, repo: context.repo.repo,
                   issue_number: openIssues[0].number,
                   body: `### Plan error — ${now}\n\n**Run:** ${runUrl}\n\n\`\`\`\n${planOut}\n\`\`\``
                 });
               } else {
                 const { data: issue } = await github.rest.issues.create({
-                  owner:  context.repo.owner,
-                  repo:   context.repo.repo,
-                  title:  `🔴 Terraform Plan Error — ${ENV}`,
-                  body:   body,
-                  labels: [LABEL]
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  title: `🔴 Terraform Plan Error — ${ENV}`, body, labels: [LABEL]
                 });
                 console.log(`Opened plan error issue #${issue.number}`);
               }
-              // Re-throw so the workflow step is marked failed.
               core.setFailed('Terraform plan returned exit code 1');
-
             } else {
-              // ── No drift (exit code 0) ────────────────────────────────────
               console.log('No drift detected.');
               for (const issue of openIssues) {
                 await github.rest.issues.createComment({
-                  owner:        context.repo.owner,
-                  repo:         context.repo.repo,
+                  owner: context.repo.owner, repo: context.repo.repo,
                   issue_number: issue.number,
                   body: `✅ No drift detected as of ${now} — closing.\n\n**Workflow run:** ${runUrl}`
                 });
                 await github.rest.issues.update({
-                  owner:        context.repo.owner,
-                  repo:         context.repo.repo,
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: issue.number, state: 'closed'
+                });
+                console.log(`Closed resolved drift issue #${issue.number}`);
+              }
+            }
+
+  drift-staging:
+    name: Drift Check (staging)
+    needs: setup-stg
+    runs-on: ${{ fromJSON(needs.setup-stg.outputs.runner) }}
+    environment: environments-drift
+    concurrency:
+      group: drift-check-staging
+      cancel-in-progress: true
+    env:
+      ARM_CLIENT_ID:              ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:              ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID:        ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC:               "true"
+      TF_VAR_pg_admin_password:   ${{ secrets.PG_ADMIN_PASSWORD }}
+      TF_VAR_runner_pat:          ${{ secrets.GH_RUNNER_PAT }}
+      TF_VAR_runner_app_pat:      ${{ secrets.GH_RUNNER_APP_PAT }}
+    defaults:
+      run:
+        working-directory: staging
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.8.0"
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=myapiterraformstate" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=staging/api.tfstate" \
+            -backend-config="use_oidc=true"
+
+      - name: Terraform Plan (drift detection)
+        id: plan
+        run: |
+          terraform plan \
+            -var-file="terraform.tfvars" \
+            -detailed-exitcode \
+            -lock-timeout=2m
+        continue-on-error: true
+
+      - name: Manage drift issue
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
+          PLAN_STDOUT:   ${{ steps.plan.outputs.stdout }}
+          RUN_URL:       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DRIFT_ENV:     staging
+        with:
+          script: |
+            const ENV      = process.env.DRIFT_ENV;
+            const LABEL    = `infrastructure-drift-${ENV}`;
+            const exitcode = process.env.PLAN_EXITCODE;
+            const runUrl   = process.env.RUN_URL;
+            const now      = new Date().toISOString();
+
+            try {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner, repo: context.repo.repo,
+                name: LABEL, color: 'd93f0b',
+                description: `Azure ${ENV} infrastructure has drifted from Terraform state`
+              });
+            } catch (_) {}
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              labels: LABEL, state: 'open'
+            });
+
+            const MAX = 60000;
+            let planOut = process.env.PLAN_STDOUT || '';
+            if (planOut.length > MAX) planOut = planOut.slice(0, MAX) + '\n\n…output truncated — see full run logs';
+
+            if (exitcode === '2') {
+              const body = [
+                `### ⚠️ Infrastructure Drift Detected — \`${ENV}\``, ``,
+                `Terraform found changes between the state file and the actual Azure infrastructure.`,
+                `Investigate whether these were intentional and either apply or revert them.`, ``,
+                `**Workflow run:** ${runUrl}`, `**Detected at:** ${now}`, ``,
+                `\`\`\``, planOut, `\`\`\``
+              ].join('\n');
+              if (openIssues.length > 0) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: openIssues[0].number,
+                  body: [`### Drift still present — ${now}`, ``, `**Workflow run:** ${runUrl}`, ``, `\`\`\``, planOut, `\`\`\``].join('\n')
+                });
+                console.log(`Updated existing drift issue #${openIssues[0].number}`);
+              } else {
+                const { data: issue } = await github.rest.issues.create({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  title: `⚠️ Infrastructure Drift Detected — ${ENV}`, body, labels: [LABEL]
+                });
+                console.log(`Opened drift issue #${issue.number}`);
+              }
+            } else if (exitcode === '1') {
+              const body = [
+                `### 🔴 Terraform Plan Error — \`${ENV}\``, ``,
+                `The nightly drift check failed to produce a plan. Manual investigation required.`, ``,
+                `**Workflow run:** ${runUrl}`, `**Occurred at:** ${now}`, ``,
+                `\`\`\``, planOut || '(no output captured — check the workflow logs)', `\`\`\``
+              ].join('\n');
+              if (openIssues.length > 0) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: openIssues[0].number,
+                  body: `### Plan error — ${now}\n\n**Run:** ${runUrl}\n\n\`\`\`\n${planOut}\n\`\`\``
+                });
+              } else {
+                const { data: issue } = await github.rest.issues.create({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  title: `🔴 Terraform Plan Error — ${ENV}`, body, labels: [LABEL]
+                });
+                console.log(`Opened plan error issue #${issue.number}`);
+              }
+              core.setFailed('Terraform plan returned exit code 1');
+            } else {
+              console.log('No drift detected.');
+              for (const issue of openIssues) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
                   issue_number: issue.number,
-                  state:        'closed'
+                  body: `✅ No drift detected as of ${now} — closing.\n\n**Workflow run:** ${runUrl}`
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: issue.number, state: 'closed'
+                });
+                console.log(`Closed resolved drift issue #${issue.number}`);
+              }
+            }
+
+  drift-production:
+    name: Drift Check (production)
+    needs: setup-prd
+    runs-on: ${{ fromJSON(needs.setup-prd.outputs.runner) }}
+    environment: environments-drift
+    concurrency:
+      group: drift-check-production
+      cancel-in-progress: true
+    env:
+      ARM_CLIENT_ID:              ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:              ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID:        ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC:               "true"
+      TF_VAR_pg_admin_password:   ${{ secrets.PG_ADMIN_PASSWORD }}
+      TF_VAR_runner_pat:          ${{ secrets.GH_RUNNER_PAT }}
+      TF_VAR_runner_app_pat:      ${{ secrets.GH_RUNNER_APP_PAT }}
+    defaults:
+      run:
+        working-directory: production
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.8.0"
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="storage_account_name=myapiterraformstate" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=production/api.tfstate" \
+            -backend-config="use_oidc=true"
+
+      - name: Terraform Plan (drift detection)
+        id: plan
+        run: |
+          terraform plan \
+            -var-file="terraform.tfvars" \
+            -detailed-exitcode \
+            -lock-timeout=2m
+        continue-on-error: true
+
+      - name: Manage drift issue
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
+          PLAN_STDOUT:   ${{ steps.plan.outputs.stdout }}
+          RUN_URL:       ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DRIFT_ENV:     production
+        with:
+          script: |
+            const ENV      = process.env.DRIFT_ENV;
+            const LABEL    = `infrastructure-drift-${ENV}`;
+            const exitcode = process.env.PLAN_EXITCODE;
+            const runUrl   = process.env.RUN_URL;
+            const now      = new Date().toISOString();
+
+            try {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner, repo: context.repo.repo,
+                name: LABEL, color: 'd93f0b',
+                description: `Azure ${ENV} infrastructure has drifted from Terraform state`
+              });
+            } catch (_) {}
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              labels: LABEL, state: 'open'
+            });
+
+            const MAX = 60000;
+            let planOut = process.env.PLAN_STDOUT || '';
+            if (planOut.length > MAX) planOut = planOut.slice(0, MAX) + '\n\n…output truncated — see full run logs';
+
+            if (exitcode === '2') {
+              const body = [
+                `### ⚠️ Infrastructure Drift Detected — \`${ENV}\``, ``,
+                `Terraform found changes between the state file and the actual Azure infrastructure.`,
+                `Investigate whether these were intentional and either apply or revert them.`, ``,
+                `**Workflow run:** ${runUrl}`, `**Detected at:** ${now}`, ``,
+                `\`\`\``, planOut, `\`\`\``
+              ].join('\n');
+              if (openIssues.length > 0) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: openIssues[0].number,
+                  body: [`### Drift still present — ${now}`, ``, `**Workflow run:** ${runUrl}`, ``, `\`\`\``, planOut, `\`\`\``].join('\n')
+                });
+                console.log(`Updated existing drift issue #${openIssues[0].number}`);
+              } else {
+                const { data: issue } = await github.rest.issues.create({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  title: `⚠️ Infrastructure Drift Detected — ${ENV}`, body, labels: [LABEL]
+                });
+                console.log(`Opened drift issue #${issue.number}`);
+              }
+            } else if (exitcode === '1') {
+              const body = [
+                `### 🔴 Terraform Plan Error — \`${ENV}\``, ``,
+                `The nightly drift check failed to produce a plan. Manual investigation required.`, ``,
+                `**Workflow run:** ${runUrl}`, `**Occurred at:** ${now}`, ``,
+                `\`\`\``, planOut || '(no output captured — check the workflow logs)', `\`\`\``
+              ].join('\n');
+              if (openIssues.length > 0) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: openIssues[0].number,
+                  body: `### Plan error — ${now}\n\n**Run:** ${runUrl}\n\n\`\`\`\n${planOut}\n\`\`\``
+                });
+              } else {
+                const { data: issue } = await github.rest.issues.create({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  title: `🔴 Terraform Plan Error — ${ENV}`, body, labels: [LABEL]
+                });
+                console.log(`Opened plan error issue #${issue.number}`);
+              }
+              core.setFailed('Terraform plan returned exit code 1');
+            } else {
+              console.log('No drift detected.');
+              for (const issue of openIssues) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `✅ No drift detected as of ${now} — closing.\n\n**Workflow run:** ${runUrl}`
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: issue.number, state: 'closed'
                 });
                 console.log(`Closed resolved drift issue #${issue.number}`);
               }
