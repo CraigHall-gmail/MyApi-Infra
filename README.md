@@ -59,10 +59,10 @@ Each environment is a self-contained Terraform root that composes six shared mod
 | Geo-redundant backup | No | No | Yes |
 | Backup retention | 7 days | 7 days | 14 days |
 | ASPNETCORE_ENVIRONMENT | Development | Staging | Production |
-| VNet injection | Yes | No | No |
-| PostgreSQL access | VNet delegation (private) | Public (firewall) | Public (firewall) |
-| Key Vault access | Private endpoint | Public (firewall) | Public (firewall) |
-| Self-hosted runner | Yes (`job-runner-dev`, `job-runner-app-dev`) | No (ubuntu-latest) | No (ubuntu-latest) |
+| VNet injection | Yes | Yes | Yes |
+| PostgreSQL access | VNet delegation (private) | VNet delegation (private) | VNet delegation (private) |
+| Key Vault access | Private endpoint | Private endpoint | Private endpoint |
+| Self-hosted runner | `job-runner-dev`, `job-runner-app-dev` | `job-runner-stg`, `job-runner-app-stg` | `job-runner-prd`, `job-runner-app-prd` |
 
 All three environments deploy to `southafricanorth`.
 
@@ -190,16 +190,16 @@ The CD pipeline (not this repo) assigns this identity to the deployed container 
 
 Runs static IaC analysis against CIS Azure benchmarks (1000+ policies). SARIF results are uploaded to the GitHub Security tab as code-scanning alerts.
 
-Active global suppressions (in `.checkov.yaml`; all relate to network isolation not yet provisioned for staging and production):
+Active global suppressions (in `.checkov.yaml`):
 
 | Check | Resource | Reason |
 |---|---|---|
-| CKV_AZURE_183 / CKV_AZURE_109 | Key Vault | Network ACL default-deny — suppressed globally because inline `checkov:skip` is not applied when the check runs from a calling module context |
-| CKV2_AZURE_5 / CKV2_AZURE_32 | Key Vault | Private endpoint not yet provisioned for staging/production |
-| CKV2_AZURE_57 | PostgreSQL | Private endpoint check — staging/production still use public access with firewall |
-| CKV2_AZURE_26 | PostgreSQL | `0.0.0.0/0.0.0.0` allow-Azure-services sentinel — staging/production only; removed from development by VNet delegation |
+| CKV_AZURE_183 / CKV_AZURE_109 | Key Vault | Network ACL default-deny — inline `checkov:skip` is not propagated when Checkov re-evaluates the check from a calling module context; must be suppressed globally |
+| CKV2_AZURE_5 / CKV2_AZURE_32 | Key Vault | Graph checks that verify a private endpoint resource relationship exist — Checkov cannot resolve the conditional `count = var.enable_private_endpoint ? 1 : 0` pattern and flags these even though the endpoint is provisioned |
+| CKV2_AZURE_57 | PostgreSQL | Graph check for a PostgreSQL private endpoint — all environments use VNet delegation instead, which Checkov does not recognise as equivalent network isolation |
+| CKV2_AZURE_26 | PostgreSQL | `0.0.0.0/0.0.0.0` allow-Azure-services sentinel — Checkov flags this as overly permissive; it is only present before VNet delegation is active and is removed on first apply with the delegated subnet |
 
-Development already satisfies these checks at the infrastructure level (VNet-delegated PostgreSQL, Key Vault private endpoint). When staging and production are migrated to the same VNet topology, all suppressions can be removed.
+All three environments satisfy the underlying intent of these checks (private networking, no public data plane access). The suppressions exist because Checkov's graph checks cannot follow conditional resource patterns or distinguish VNet delegation from a missing private endpoint.
 
 ### SonarCloud
 
@@ -221,7 +221,7 @@ PostgreSQL server:       psql-myapi-dev / psql-myapi-stg / psql-myapi-prd
 Key Vault:               kv-myapi-dev / kv-myapi-stg / kv-myapi-prd
 Managed identity:        id-myapi-dev / id-myapi-stg / id-myapi
 Virtual Network:         vnet-myapi-dev / vnet-myapi-stg / vnet-myapi-prd
-NSGs:                    nsg-aca-myapi-dev / nsg-postgres-myapi-dev / nsg-pe-myapi-dev / nsg-runner-myapi-dev
+NSGs:                    nsg-aca-myapi-dev / nsg-postgres-myapi-dev / nsg-pe-myapi-dev / nsg-runner-myapi-dev  (same pattern for -stg / -prd)
 ACA Jobs (infra runner): job-runner-dev / job-runner-stg / job-runner-prd
 ACA Jobs (app runner):   job-runner-app-dev / job-runner-app-stg / job-runner-app-prd
 ```
