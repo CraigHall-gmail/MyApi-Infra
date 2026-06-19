@@ -25,7 +25,8 @@
 #   environments-drift → matrix entries: staging, production
 #
 # Required secrets (per GitHub Environment):
-#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#   PG_ADMIN_PASSWORD, GH_RUNNER_PAT, GH_RUNNER_APP_PAT
 # ══════════════════════════════════════════════════════════════════════════════
 
 name: Infra - Drift (Scheduled)
@@ -70,11 +71,13 @@ jobs:
         working-directory: ${{ matrix.infra_dir }}
 
     env:
-      ARM_CLIENT_ID:            ${{ secrets.AZURE_CLIENT_ID }}
-      ARM_TENANT_ID:            ${{ secrets.AZURE_TENANT_ID }}
-      ARM_SUBSCRIPTION_ID:      ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      ARM_USE_OIDC:             "true"
-      TF_VAR_pg_admin_password: ${{ secrets.PG_ADMIN_PASSWORD }}
+      ARM_CLIENT_ID:              ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:              ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID:        ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC:               "true"
+      TF_VAR_pg_admin_password:   ${{ secrets.PG_ADMIN_PASSWORD }}
+      TF_VAR_runner_pat:          ${{ secrets.GH_RUNNER_PAT }}
+      TF_VAR_runner_app_pat:      ${{ secrets.GH_RUNNER_APP_PAT }}
 
     steps:
       - name: Checkout
@@ -88,9 +91,11 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: "1.8.0"
+          # terraform_wrapper remains enabled (default) so that steps.plan.outputs.exitcode
+          # and steps.plan.outputs.stdout are populated for the drift issue script below.
 
       - name: Terraform Init
         run: |
