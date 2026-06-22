@@ -22,8 +22,6 @@ provider "azurerm" {
   # Credentials injected via ARM_* env vars in GitHub Actions (OIDC)
 }
 
-data "azurerm_client_config" "current" {}
-
 # ── Private DNS Zones ───────────────────────────────────────────────────────────
 
 resource "azurerm_private_dns_zone" "postgres" {
