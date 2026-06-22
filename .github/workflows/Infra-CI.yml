@@ -136,7 +136,39 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-  # ── Job 3: Checkov Security Scan ─────────────────────────────────────────
+  # ── Job 3: TFLint ────────────────────────────────────────────────────────
+  # Provider-aware linting: catches invalid Azure SKU names, invalid resource
+  # name lengths/characters, deprecated attributes, and other issues that
+  # terraform validate misses (validate checks schema, not valid enum values).
+  # The azurerm ruleset adds Azure-specific rules on top of the built-in set.
+  # Config lives in .tflint.hcl at the repo root.
+  #
+  # NOTE: pin this action to a SHA following the project's existing convention.
+  # Find the SHA for the target tag at: github.com/terraform-linters/setup-tflint/releases
+  tflint:
+    name: TFLint
+    needs: format-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
+        with:
+          tflint_version: v0.63.1
+
+      - name: Init TFLint plugins
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Run TFLint
+        run: tflint --recursive --format compact
+
+  # ── Job 4: Checkov Security Scan ─────────────────────────────────────────
   # Static analysis of all Terraform against CIS Azure benchmarks and 1000+
   # built-in policies. Runs in parallel with validate — no Azure credentials
   # required. SARIF output is uploaded to the GitHub Security tab so findings
@@ -237,7 +269,7 @@ jobs:
 
   setup-dev:
     name: Check Dev Runner
-    needs: [validate, checkov, sonarcloud]
+    needs: [validate, checkov, sonarcloud, tflint]
     runs-on: ubuntu-latest
     environment: development
     permissions:
@@ -303,7 +335,7 @@ jobs:
 
   setup-stg:
     name: Check Staging Runner
-    needs: [validate, checkov, sonarcloud]
+    needs: [validate, checkov, sonarcloud, tflint]
     runs-on: ubuntu-latest
     environment: staging
     permissions:
@@ -369,7 +401,7 @@ jobs:
 
   setup-prd:
     name: Check Production Runner
-    needs: [validate, checkov, sonarcloud]
+    needs: [validate, checkov, sonarcloud, tflint]
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -443,7 +475,7 @@ jobs:
   # preventing PRs from being permanently blocked by a stale "pending" status.
   ci-status:
     name: CI Status
-    needs: [format-check, validate, checkov, sonarcloud, setup-dev, setup-stg, setup-prd, plan-apply-development, plan-apply-staging, plan-apply-production]
+    needs: [format-check, validate, checkov, sonarcloud, tflint, setup-dev, setup-stg, setup-prd, plan-apply-development, plan-apply-staging, plan-apply-production]
     if: always()
     runs-on: ubuntu-latest
     steps:
