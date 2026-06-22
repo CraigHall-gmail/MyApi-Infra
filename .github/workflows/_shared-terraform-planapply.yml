@@ -177,6 +177,15 @@ jobs:
             -backend-config="key=$TF_STATE_KEY" \
             -backend-config="use_oidc=true"
 
+      # Key Vault secrets use the KV data plane (vault.azure.net), which is
+      # network-gated to private-endpoint-only. The GitHub-hosted destroy runner
+      # has no VNet access, so refresh and delete calls return 403. Removing
+      # secrets from state before planning is safe: deleting the vault
+      # soft-deletes all its contents, so explicit secret deletion is redundant.
+      - name: Remove Key Vault secrets from state (destroy only)
+        if: inputs.destroy == true
+        run: terraform state list | grep 'azurerm_key_vault_secret' | xargs -r terraform state rm
+
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
@@ -335,6 +344,10 @@ jobs:
             -backend-config="container_name=$TF_STATE_CONTAINER" \
             -backend-config="key=$TF_STATE_KEY" \
             -backend-config="use_oidc=true"
+
+      - name: Remove Key Vault secrets from state (destroy only)
+        if: inputs.destroy == true
+        run: terraform state list | grep 'azurerm_key_vault_secret' | xargs -r terraform state rm
 
       - name: Terraform Plan
         run: |
